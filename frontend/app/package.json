@@ -1,0 +1,21 @@
+{
+  "name": "imad-frontend",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "description": "Imad — Autonomous Engineering Engine frontend (Sprints 2–5 workspace)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.4"
+  }
+}

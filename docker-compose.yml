@@ -1,0 +1,97 @@
+# ==================================================================
+# Imad (عِماد) — Full-stack compose (Sprints 0–14)
+#   · redis    queue broker for background jobs (Sprint 14)
+#   · backend  FastAPI + SQLAlchemy (with healthcheck)
+#   · worker   background task processor (same backend image)
+#   · frontend React/Vite static build served by nginx (healthcheck)
+# ==================================================================
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: imad-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks: [imad-net]
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: imad-backend
+    env_file: .env
+    environment:
+      - APP_ENV=development
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./database/schema.sql:/app/database/schema.sql:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks: [imad-net]
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: imad-worker
+    env_file: .env
+    environment:
+      - APP_ENV=development
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./database/schema.sql:/app/database/schema.sql:ro
+    command: python -m app.core.worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [imad-net]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: imad-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks: [imad-net]
+
+# Shared bridge network used by every service.
+networks:
+  imad-net:
+    driver: bridge
+
+# ── Production placeholders (NOT activated yet) ─────────────────────────
+# · Monitoring: Sentry (backend) + uptime probes — add SENTRY_DSN env and
+#   wire `sentry_sdk.init` in app.main.
+# · CDN:        Put Cloudflare in front of the frontend service.
+# · Postgres:   Swap SQLite for the reserved postgres service.
+# · Scaling:    Replace the inline worker with a Celery pool (+ beats).
