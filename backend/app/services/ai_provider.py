@@ -17,8 +17,6 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from app.core.config import get_settings
-
 log = logging.getLogger("imad.ai")
 
 
@@ -56,7 +54,6 @@ class OllamaLocalProvider(AIProvider):
     provider_name = "ollama"
 
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
-        settings = get_settings()
         self.base_url = (base_url or "http://localhost:11434").rstrip("/")
         self.model = model or "llama3"
 

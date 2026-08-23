@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Dict
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.storage import load_upload, result_id, save_result

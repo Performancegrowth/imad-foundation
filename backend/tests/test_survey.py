@@ -1,8 +1,6 @@
 """Sprint 4 — Survey processor tests."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app.services.survey_processor import (

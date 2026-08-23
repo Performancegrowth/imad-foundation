@@ -16,7 +16,6 @@ for interchange into other DCC/BIM tools.
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import math
 import struct

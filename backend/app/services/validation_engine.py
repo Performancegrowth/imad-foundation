@@ -20,10 +20,9 @@ second look before release.
 from __future__ import annotations
 
 import logging
-import math
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("imad.validation")
 

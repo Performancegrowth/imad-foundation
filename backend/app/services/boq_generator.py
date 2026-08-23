@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.models.plan_data import PlanData
@@ -300,7 +302,7 @@ def generate_boq(plan: PlanData, survey: Optional[SurveyReading] = None,
 # ───────────────────────────────────────────────────────────────── exports ────
 def boq_pdf(boq: Dict[str, Any], out_path: Optional[str] = None) -> str:
     """Render the BOQ as a branded PDF with cover KPIs and BBS appendix."""
-    from .exporters import build_pdf_report, exports_dir, simple_bar_chart
+    from .exporters import build_pdf_report, exports_dir, now_iso
 
     path = Path(out_path) if out_path else (
         exports_dir() / f"boq-{datetime.now(timezone.utc):%Y%m%d%H%M%S}.pdf")

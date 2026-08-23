@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app import schemas
 from app.core.database import get_session
 from app.core.security import decode_access_token
-from app.models import Project
 
 router = APIRouter()
 

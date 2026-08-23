@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.core.storage import load_result, result_id, save_result
+from app.core.storage import result_id, save_result
 from app.services.boq_generator import BOQError, generate_boq
 from app.services.carbon_calculator import (
     CarbonError,

@@ -9,7 +9,6 @@ LAS point clouds. Both normalise into :class:`SurveyReading` and a readable
 from __future__ import annotations
 
 import csv
-import io
 import json
 import logging
 import math

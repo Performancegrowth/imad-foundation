@@ -5,7 +5,7 @@ import logging
 import tempfile
 from typing import Any, Dict
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.services.survey_processor import (

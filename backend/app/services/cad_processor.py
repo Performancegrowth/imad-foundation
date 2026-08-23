@@ -11,12 +11,10 @@ from __future__ import annotations
 
 import logging
 import math
-import os
-import tempfile
 from abc import ABC, abstractmethod
 from itertools import count
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Tuple
 
 from app.models.plan_data import GridLine, PlanData, Wall, Beam, Column, ImageInput
 

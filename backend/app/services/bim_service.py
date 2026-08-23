@@ -108,7 +108,7 @@ def export_ifc(plan: PlanData, project_name: str = "Imad Project") -> bytes:
     stories = max(1, int(getattr(plan, "stories", 1)))
 
     origin2d = w.add("IFCCARTESIANPOINT", (0., 0.))
-    ax2d = w.add("IFCAXIS2PLACEMENT2D", w.ref(origin2d))
+    w.add("IFCAXIS2PLACEMENT2D", w.ref(origin2d))
     origin3d = w.add("IFCCARTESIANPOINT", (0., 0., 0.))
     z_dir = w.add("IFCDIRECTION", (0., 0., 1.))
     ctx = w.add("IFCGEOMETRICREPRESENTATIONCONTEXT", None, "Model", None,
