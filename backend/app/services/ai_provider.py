@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import urllib.error
 import urllib.request
@@ -54,7 +55,8 @@ class OllamaLocalProvider(AIProvider):
     provider_name = "ollama"
 
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
-        self.base_url = (base_url or "http://localhost:11434").rstrip("/")
+        self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL")
+                         or "http://localhost:11434").rstrip("/")
         self.model = model or "llama3"
 
     def chat(

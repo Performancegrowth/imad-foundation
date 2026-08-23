@@ -1,4 +1,4 @@
-"""Sprint 7 — BOQ endpoints: generate, export PDF/Excel, fetch stored BOQs."""
+"""Sprint 7 — BOQ generation and export endpoints."""
 from __future__ import annotations
 
 import logging
@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from app.core import jobs
 from app.core.storage import load_result, result_id, save_result
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
@@ -43,12 +44,22 @@ def _resolve_plan(payload: GenerateBOQRequest) -> PlanData:
 
 @router.post("/generate-boq", summary="Generate a detailed BOQ + BBS")
 async def generate(payload: GenerateBOQRequest) -> Dict[str, Any]:
+    """Validate input, then enqueue or run synchronously."""
+    data = payload.model_dump()
+    if jobs.queue_available():
+        return {"job_id": jobs.enqueue_job("boq", data)}
+    return run_boq(data)
+
+
+def run_boq(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Run a BOQ generation job. Worker-safe."""
     from app.core import audit
 
-    plan = _resolve_plan(payload)
-    survey = SurveyReading(**payload.survey) if payload.survey else None
+    request = GenerateBOQRequest(**data)
+    plan = _resolve_plan(request)
+    survey = SurveyReading(**request.survey) if request.survey else None
     try:
-        boq = generate_boq(plan, survey, project_name=payload.project_name)
+        boq = generate_boq(plan, survey, project_name=request.project_name)
     except BOQError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
@@ -56,9 +67,9 @@ async def generate(payload: GenerateBOQRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"BOQ failed: {exc}") from exc
 
     rid = result_id("boq")
-    save_result(rid, {"project_id": payload.project_id,
+    save_result(rid, {"project_id": request.project_id,
                       "kind": "boq", "payload": boq})
-    audit.log_action("generate_boq", project_id=payload.project_id,
+    audit.log_action("generate_boq", project_id=request.project_id,
                      details={"result_id": rid, "total_usd": boq["totals"]["amount_usd"]})
     return {"result_id": rid, **boq}
 

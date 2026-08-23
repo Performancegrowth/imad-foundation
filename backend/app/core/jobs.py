@@ -10,11 +10,45 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, Optional
+
+# Redis-backed queue contract shared by the API dispatcher and the worker.
+# The worker (app/core/worker.py) consumes this key with BLPOP.
+QUEUE = "imad:jobs"
+_QUEUE_CLIENT = None
+
+
+def queue_available() -> bool:
+    """True when a reachable Redis broker is configured (production path)."""
+    global _QUEUE_CLIENT
+    if not os.getenv("REDIS_URL"):
+        return False
+    if _QUEUE_CLIENT is None:
+        try:
+            import redis  # type: ignore
+            client = redis.Redis.from_url(os.getenv("REDIS_URL", ""))
+            client.ping()
+            _QUEUE_CLIENT = client
+        except Exception:  # pragma: no cover — redis absent/unreachable
+            _QUEUE_CLIENT = None
+    return _QUEUE_CLIENT is not None
+
+
+def enqueue_job(kind: str, payload: Dict[str, Any]) -> str:
+    """Create a durable job record and push it to the Redis list queue."""
+    job_id = new_job(kind)
+    record = {"job_id": job_id, "kind": kind, "payload": payload}
+    try:
+        _QUEUE_CLIENT.lpush(QUEUE, json.dumps(record, default=str))
+    except Exception:  # pragma: no cover — surface enqueue failures
+        update_job(job_id, status="failed", error="Failed to enqueue job.")
+        raise
+    return job_id
 
 
 def jobs_dir() -> Path:

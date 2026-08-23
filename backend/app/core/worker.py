@@ -8,17 +8,48 @@ same, so job handlers remain reusable.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
 
+from app.core import jobs
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-QUEUE = "imad:jobs"
+QUEUE = jobs.QUEUE
+
+
+def run_task(kind: str, data) -> dict:
+    """Resolve a queued ``kind`` to its worker-safe compute function."""
+    if kind == "analysis":
+        from app.api.analysis import run_analysis
+        return run_analysis(data)
+    if kind == "boq":
+        from app.api.boq import run_boq
+        return run_boq(data)
+    if kind == "carbon":
+        from app.api.sustainability import run_carbon
+        return asyncio.run(run_carbon(data))
+    raise ValueError(f"Unknown job kind: {kind!r}")
 
 
 def process(payload) -> None:
-    """Handle a single queued job payload (decode → act)."""
-    print(f"[worker] processed job: {json.dumps(payload, ensure_ascii=False)[:200]}")
+    """Handle a single queued job payload (decode -> act -> record)."""
+    job_id = payload.get("job_id")
+    kind = payload.get("kind")
+    data = payload.get("payload")
+    if not job_id:
+        raise ValueError("Job payload missing 'job_id'")
+
+    jobs.update_job(job_id, status="running")
+    try:
+        result = run_task(kind, data)
+    except Exception as exc:  # pragma: no cover — surface failures on the job
+        jobs.update_job(job_id, status="failed", error=str(exc))
+        print(f"[worker] {kind} job {job_id} failed: {exc}")
+        return
+    jobs.update_job(job_id, status="completed", progress=1.0, result=result)
+    print(f"[worker] {kind} job {job_id} completed")
 
 
 def main() -> None:

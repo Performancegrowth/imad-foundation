@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.core import jobs
 from app.core.storage import result_id, save_result
 from app.services.boq_generator import BOQError, generate_boq
 from app.services.carbon_calculator import (
@@ -57,21 +58,31 @@ async def _build(boq: Dict[str, Any]) -> Dict[str, Any]:
 
 @router.post("/carbon-report", summary="Full embodied-carbon report from a plan or BOQ")
 async def carbon_report(payload: CarbonReportRequest) -> Dict[str, Any]:
+    """Validate input, then enqueue a background job or run synchronously."""
+    data = payload.model_dump()
+    if jobs.queue_available():
+        return {"job_id": jobs.enqueue_job("carbon", data)}
+    return await run_carbon(data)
+
+
+async def run_carbon(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a carbon-report job. Worker-safe (usable with asyncio.run)."""
     from app.core import audit
 
-    if payload.plan:
+    request = CarbonReportRequest(**data)
+    if request.plan:
         try:
-            plan = PlanData(**payload.plan)
+            plan = PlanData(**request.plan)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Invalid plan: {exc}") from exc
-        survey = SurveyReading(**payload.survey) if payload.survey else None
+        survey = SurveyReading(**request.survey) if request.survey else None
         try:
-            boq = generate_boq(plan, survey, project_name=payload.project_name)
+            boq = generate_boq(plan, survey, project_name=request.project_name)
         except BOQError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-    elif payload.plan_name:
+    elif request.plan_name:
         try:
-            saved = PlanGenerator.load_plan(payload.project_id, payload.plan_name)
+            saved = PlanGenerator.load_plan(request.project_id, request.plan_name)
         except PlanGenerationError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         raw_plan = saved.get("plan") or saved.get("plan_data") or {}
@@ -80,7 +91,7 @@ async def carbon_report(payload: CarbonReportRequest) -> Dict[str, Any]:
             boq = generate_boq(
                 plan,
                 SurveyReading(**(saved.get("survey") or {})) or None,
-                project_name=payload.project_name,
+                project_name=request.project_name,
             )
         except (BOQError, TypeError) as exc:
             raise HTTPException(status_code=422, detail=f"Saved plan unusable: {exc}") from exc
@@ -89,9 +100,9 @@ async def carbon_report(payload: CarbonReportRequest) -> Dict[str, Any]:
 
     report = await _build(boq)
     rid = result_id("carbon")
-    save_result(rid, {"project_id": payload.project_id, "kind": "carbon",
+    save_result(rid, {"project_id": request.project_id, "kind": "carbon",
                       "payload": {"boq_ref": boq["totals"], **report}})
-    audit.log_action("carbon_report", project_id=payload.project_id,
+    audit.log_action("carbon_report", project_id=request.project_id,
                      details={"result_id": rid,
                               "total_t": report["carbon"]["total_co2e_tonnes"]})
     return {"result_id": rid, "boq_totals": boq["totals"], **report}

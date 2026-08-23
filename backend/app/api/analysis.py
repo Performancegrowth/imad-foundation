@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.core import jobs
 from app.core.storage import result_id, save_result
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
@@ -38,13 +39,24 @@ class AnalyzeResponse(BaseModel):
     member_forces: list
 
 
-@router.post("/analyze", response_model=AnalyzeResponse, summary="Run structural analysis on a plan")
-async def analyze(payload: AnalyzeRequest):
-    plan = _resolve_plan(payload)
-    survey = SurveyReading(**payload.survey) if payload.survey else None
+@router.post("/analyze", summary="Run structural analysis on a plan")
+async def analyze(payload: AnalyzeRequest) -> Dict[str, Any]:
+    """Validate input, then either enqueue a background job (production) or run
+    synchronously (local dev fallback for backward compatibility)."""
+    data = payload.model_dump()
+    if jobs.queue_available():
+        return {"job_id": jobs.enqueue_job("analysis", data)}
+    return run_analysis(data)
+
+
+def run_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a structural analysis job. Worker-safe (no HTTP context)."""
+    request = AnalyzeRequest(**data)
+    plan = _resolve_plan(request)
+    survey = SurveyReading(**request.survey) if request.survey else None
 
     try:
-        result = _engine.analyze(plan, survey, payload.options or {})
+        result = _engine.analyze(plan, survey, request.options or {})
     except StructuralError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
@@ -53,7 +65,7 @@ async def analyze(payload: AnalyzeRequest):
 
     rid = result_id("an")
     save_result(rid, {
-        "project_id": payload.project_id,
+        "project_id": request.project_id,
         "status": result.status,
         "solver": result.diagnostics.solver,
         "periods": result.periods_s,
@@ -70,21 +82,21 @@ async def analyze(payload: AnalyzeRequest):
         },
     })
 
-    return AnalyzeResponse(
-        result_id=rid,
-        status=result.status,
-        solver=result.diagnostics.solver,
-        summary={
+    return {
+        "result_id": rid,
+        "status": result.status,
+        "solver": result.diagnostics.solver,
+        "summary": {
             "max_moment_kNm": result.max_moment_kNm,
             "max_shear_kN": result.max_shear_kN,
             "max_axial_kN": result.max_axial_kN,
             "max_deflection_mm": result.max_deflection_mm,
         },
-        design=result.design,
-        boq=result.boq,
-        reactions=result.reactions,
-        member_forces=[f.__dict__ for f in result.member_forces],
-    )
+        "design": result.design,
+        "boq": result.boq,
+        "reactions": result.reactions,
+        "member_forces": [f.__dict__ for f in result.member_forces],
+    }
 
 
 def _resolve_plan(payload: AnalyzeRequest) -> PlanData:

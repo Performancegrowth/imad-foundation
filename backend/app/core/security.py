@@ -68,13 +68,13 @@ def create_access_token(subject_id: int, email: str) -> str:
         "exp": int(exp.timestamp()),
         "jti": secrets.token_urlsafe(16),
     }
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def decode_access_token(token: str) -> TokenPayload:
     """Decode + validate a token, raising on expiry / bad signature."""
     settings = get_settings()
-    raw = jwt.decode(token, settings.SECRET_KEY, algorithms=_jwt_algorithms)
+    raw = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=_jwt_algorithms)
     return TokenPayload(**raw)
 
 

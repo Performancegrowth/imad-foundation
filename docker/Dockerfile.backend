@@ -1,5 +1,10 @@
 # ==================================================================
 # Imad — Backend container (FastAPI + Uvicorn)
+#
+# Python 3.12-slim is Debian-based. Native engineering libraries
+# (OpenSeesPy), IFC parsing (ifcopenshell) and imaging (OpenCV) ship
+# as compiled extensions that need these system libraries at import
+# time, so we install them before the Python dependency layer.
 # ==================================================================
 FROM python:3.12-slim AS base
 
@@ -8,6 +13,19 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
+
+# ── System libraries for native extensions ────────────────────────
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    libglib2.0-0 \
+    libgl1-mesa-glx \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    gcc \
+    g++ \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Dependencies first (cached separately by Docker) ─────────────
 COPY ./backend/requirements.txt ./requirements.txt
@@ -19,7 +37,10 @@ COPY ./backend/app ./app
 COPY ./backend/tests ./tests
 COPY ./database/schema.sql ./database/schema.sql
 COPY ./.env.example ./.env.example
+COPY ./backend/start.sh ./start.sh
+COPY ./backend/alembic.ini ./alembic.ini
+COPY ./backend/migrations ./migrations
 
 # ── Runtime ───────────────────────────────────────────────────────
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["bash", "start.sh"]

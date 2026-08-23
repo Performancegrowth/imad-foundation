@@ -1,9 +1,10 @@
 # ==================================================================
-# Imad (عِماد) — Full-stack compose (Sprints 0–14)
-#   · redis    queue broker for background jobs (Sprint 14)
-#   · backend  FastAPI + SQLAlchemy (with healthcheck)
-#   · worker   background task processor (same backend image)
-#   · frontend React/Vite static build served by nginx (healthcheck)
+# Imad (عِماد) — Full-stack compose (with Ollama + persistent storage)
+#   · redis     queue broker for background jobs (Sprint 14)
+#   · backend   FastAPI + SQLAlchemy (with healthcheck)
+#   · worker    background task processor (same backend image)
+#   · ollama    local LLM endpoint for AI-assisted engineering
+#   · frontend  React/Vite static build served by nginx (healthcheck)
 # ==================================================================
 services:
   redis:
@@ -14,8 +15,20 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks: [imad-net]
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: imad-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    ports:
+      - "11434:11434"
     restart: unless-stopped
     networks: [imad-net]
 
@@ -28,9 +41,14 @@ services:
     environment:
       - APP_ENV=development
       - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - UPLOAD_DIR=/app/storage/uploads
+      - RESULTS_DIR=/app/storage/results
     volumes:
       - ./backend/app:/app/app:ro
       - ./database/schema.sql:/app/database/schema.sql:ro
+      - uploads_data:/app/storage/uploads
+      - results_data:/app/storage/results
     ports:
       - "8000:8000"
     depends_on:
@@ -54,9 +72,14 @@ services:
     environment:
       - APP_ENV=development
       - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - UPLOAD_DIR=/app/storage/uploads
+      - RESULTS_DIR=/app/storage/results
     volumes:
       - ./backend/app:/app/app:ro
       - ./database/schema.sql:/app/database/schema.sql:ro
+      - uploads_data:/app/storage/uploads
+      - results_data:/app/storage/results
     command: python -m app.core.worker
     depends_on:
       redis:
@@ -84,14 +107,19 @@ services:
     restart: unless-stopped
     networks: [imad-net]
 
+# Persistent storage volumes (survive container rebuilds).
+volumes:
+  ollama_data:
+  uploads_data:
+  results_data:
+
 # Shared bridge network used by every service.
 networks:
   imad-net:
     driver: bridge
 
-# ── Production placeholders (NOT activated yet) ─────────────────────────
-# · Monitoring: Sentry (backend) + uptime probes — add SENTRY_DSN env and
-#   wire `sentry_sdk.init` in app.main.
+# ── Production placeholders (NOT activated yet) ─────────────────────
+# · Postgres: swap SQLite for a postgres service; when added, give it a
+#   healthcheck with `test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]`.
+# · Monitoring: Sentry (backend) + uptime probes — add SENTRY_DSN env.
 # · CDN:        Put Cloudflare in front of the frontend service.
-# · Postgres:   Swap SQLite for the reserved postgres service.
-# · Scaling:    Replace the inline worker with a Celery pool (+ beats).

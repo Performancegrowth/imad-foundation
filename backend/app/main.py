@@ -42,14 +42,16 @@ app = FastAPI(
 )
 
 # ------------------------------------------------------------------ middleware --
-if settings.DEBUG:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# ------------------------------------------------------------- middleware --
+# CORS uses an explicit allow-list (see Settings.cors_origin_list); it is
+# applied unconditionally so the backend is reachable from deployed origins.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------------------------------------------------------------------- routes --

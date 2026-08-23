@@ -25,9 +25,14 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str = "dev-insecure-secret-change-me"
+    JWT_SECRET_KEY: str = "dev-insecure-jwt-secret-change-me"  # alias for auth
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 43200
+
+    # AI / Ollama
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     # Database
     DATABASE_URL: str = "sqlite:///./imad.db"

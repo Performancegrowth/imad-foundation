@@ -8,6 +8,7 @@ these for the ORM while keeping the same public functions.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,13 +20,18 @@ def storage_root() -> Path:
 
 
 def uploads_dir() -> Path:
-    p = storage_root() / "uploads"
+    """Upload directory. Override with the ``UPLOAD_DIR`` env var for persistent
+    volumes in Docker (see docker-compose.yml)."""
+    override = os.getenv("UPLOAD_DIR")
+    p = Path(override) if override else storage_root() / "uploads"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def results_dir() -> Path:
-    p = storage_root() / "results"
+    """Design-results directory. Override with the ``RESULTS_DIR`` env var."""
+    override = os.getenv("RESULTS_DIR")
+    p = Path(override) if override else storage_root() / "results"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
