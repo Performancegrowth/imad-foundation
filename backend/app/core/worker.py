@@ -56,7 +56,11 @@ def main() -> None:
     try:
         import redis  # type: ignore
 
-        client = redis.Redis.from_url(REDIS_URL)
+        client = redis.Redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=10,
+            health_check_interval=30,
+        )
         client.ping()
     except Exception as exc:  # pragma: no cover — redis not installed
         print(f"[worker] Redis unavailable ({exc}); running placeholder loop")
@@ -67,7 +71,12 @@ def main() -> None:
 
     print(f"[worker] watching '{QUEUE}' on {REDIS_URL}")
     while True:
-        item = client.blpop(QUEUE, timeout=5)
+        try:
+            item = client.blpop(QUEUE, timeout=5)
+        except redis.exceptions.TimeoutError:
+            # Transient socket timeout (e.g. broker restart) — reconnect via
+            # the connection pool and keep polling instead of crash-looping.
+            continue
         if not item:
             continue
         try:
