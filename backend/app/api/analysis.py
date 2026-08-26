@@ -41,10 +41,15 @@ class AnalyzeResponse(BaseModel):
 
 @router.post("/analyze", summary="Run structural analysis on a plan")
 async def analyze(payload: AnalyzeRequest) -> Dict[str, Any]:
-    """Validate input, then either enqueue a background job (production) or run
-    synchronously (local dev fallback for backward compatibility)."""
+    """Run the analysis and return the full result payload.
+
+    Background execution (Redis queue + worker) is available by opting in with
+    ``options: {"async": true}``; the response then carries a ``job_id`` that
+    can be polled at ``GET /jobs/{job_id}``. Synchronous-by-default keeps the
+    workspace UI simple: it renders whatever this call returns.
+    """
     data = payload.model_dump()
-    if jobs.queue_available():
+    if (payload.options or {}).get("async"):
         return {"job_id": jobs.enqueue_job("analysis", data)}
     return run_analysis(data)
 

@@ -50,6 +50,7 @@ services:
       - ./database/schema.sql:/app/database/schema.sql:ro
       - uploads_data:/app/storage/uploads
       - results_data:/app/storage/results
+      - jobs_data:/app/storage/jobs   # share job status/results with worker
     ports:
       - "8000:8000"
     depends_on:
@@ -82,6 +83,7 @@ services:
       - ./database/schema.sql:/app/database/schema.sql:ro
       - uploads_data:/app/storage/uploads
       - results_data:/app/storage/results
+      - jobs_data:/app/storage/jobs   # share job status/results with API
     command: python -m app.core.worker
     depends_on:
       redis:
@@ -114,6 +116,7 @@ volumes:
   ollama_data:
   uploads_data:
   results_data:
+  jobs_data:
 
 # Shared bridge network used by every service.
 networks:

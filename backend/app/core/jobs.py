@@ -41,6 +41,10 @@ def queue_available() -> bool:
 
 def enqueue_job(kind: str, payload: Dict[str, Any]) -> str:
     """Create a durable job record and push it to the Redis list queue."""
+    # Ensure the broker connection exists even when callers skipped the
+    # availability probe (e.g. explicit async opt-in on /analyze).
+    if _QUEUE_CLIENT is None and not queue_available():
+        raise RuntimeError("Redis queue is not available.")
     job_id = new_job(kind)
     record = {"job_id": job_id, "kind": kind, "payload": payload}
     try:
