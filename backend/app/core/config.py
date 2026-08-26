@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # AI / Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5:0.5b"
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # Database

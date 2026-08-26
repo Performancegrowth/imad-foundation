@@ -57,7 +57,8 @@ class OllamaLocalProvider(AIProvider):
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
         self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL")
                          or "http://localhost:11434").rstrip("/")
-        self.model = model or "llama3"
+        # Model resolution: explicit arg → OLLAMA_MODEL env → safe 0.5b default.
+        self.model = model or os.getenv("OLLAMA_MODEL") or "qwen2.5:0.5b"
 
     def chat(
         self, messages: List[BaseMessage], temperature: float = 0.2
