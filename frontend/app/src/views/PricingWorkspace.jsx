@@ -1,40 +1,9 @@
 // Sprint 9C/14 — Pricing & subscription management.
 import { useEffect, useState } from 'react'
 import { pApi } from '../platformApi.js'
-
-const PLANS = [
-  {
-    id: 'free', name: 'Free', price: 0, blurb: 'Evaluate Imad on a single project.',
-    features: ['1 project', 'Plan creation & CAD import', 'Survey input',
-               'Watermarked exports'],
-    locked: ['Structural analysis', 'Generative design', 'BOQ & reports', 'PDF/Excel export', '3D without watermark'],
-  },
-  {
-    id: 'payg', name: 'Pay-Per-Project', price: 99, suffix: '/project',
-    blurb: 'Occasional projects without a subscription.',
-    features: ['Everything in Free, unlocked per project', 'Full structural analysis',
-               'Generative design (top 3)', 'BOQ + BBS exports'],
-    locked: ['White-label', 'API access'],
-  },
-  {
-    id: 'office', popular: true, name: 'Office', price: 299, suffix: '/month',
-    blurb: 'For engineering offices running live projects.',
-    features: ['Unlimited projects', 'All analysis & generative tools',
-               'Unlimited PDF/Excel/LCA exports', 'Collaboration & approvals',
-               'Consultant marketplace', 'API access (fair use)'],
-    locked: [],
-  },
-  {
-    id: 'enterprise', name: 'Enterprise', price: 999, suffix: '/month',
-    blurb: 'Multi-team deployments with compliance needs.',
-    features: ['Everything in Office', 'White-label domain & branding',
-               'Priority queue & dedicated support', 'SSO / RBAC management',
-               'On-prem Ollama agent hosting'],
-    locked: [],
-  },
-]
-
-const money = (v) => `$${Number(v).toLocaleString()}`
+import Seo from '../components/Seo.jsx'
+import PlanCard, { PLANS, StatLike } from '../components/PricingCard.jsx'
+import { SITE_URL } from '../seoData.js'
 
 export default function PricingWorkspace() {
   const [annual, setAnnual] = useState(false)
@@ -62,13 +31,16 @@ export default function PricingWorkspace() {
     }
   }
 
-  const priceOf = (p) => (annual && !p.suffix ? Math.round(p.price * 12 * 0.85) : p.price)
-
   return (
     <div className="workspace-grid">
+      <Seo
+        title="Pricing – Imad (عِماد)"
+        description="Simple pricing for AI structural design, BOQ generation, and sustainability reporting. Free tier available."
+        canonical={`${SITE_URL}/pricing`}
+      />
       <section className="card span-2" aria-labelledby="pricing-title">
         <div className="card-header">
-          <h2 id="pricing-title">Plans &amp; Pricing</h2>
+          <h1 id="pricing-title">Plans &amp; Pricing</h1>
           <label className="inline-controls" htmlFor="cycle-toggle">
             <span className={annual ? 'muted' : 'strong'}>Monthly</span>
             <input id="cycle-toggle" type="checkbox" checked={annual}
@@ -95,23 +67,7 @@ export default function PricingWorkspace() {
 
       <div className="pricing-grid span-2">
         {PLANS.map((p) => (
-          <article key={p.id} className={`card pricing-card${p.popular ? ' featured' : ''}`}
-                   aria-label={`${p.name} plan`}>
-            {p.popular && <span className="badge gold">Most popular</span>}
-            <h3>{p.name}</h3>
-            <p className="price"><strong>{money(priceOf(p))}</strong>
-              <span className="muted">{p.suffix ?? (annual ? '/year' : '/month')}</span></p>
-            <p className="muted small">{p.blurb}</p>
-            <ul className="feature-list">
-              {p.features.map((f) => <li key={f}>✓ {f}</li>)}
-              {p.locked.map((f) => <li key={f} className="locked">✕ {f}</li>)}
-            </ul>
-            <button className={`btn ${p.popular ? 'primary' : ''}`} disabled={busy !== null}
-                    onClick={() => upgrade(p.id)}>
-              {busy === p.id ? 'Processing…'
-                : current?.plan === p.id ? 'Current plan' : p.price === 0 ? 'Switch to Free' : 'Upgrade'}
-            </button>
-          </article>
+          <PlanCard key={p.id} p={p} annual={annual} busy={busy} current={current} onUpgrade={upgrade} />
         ))}
       </div>
 
@@ -122,15 +78,6 @@ export default function PricingWorkspace() {
           via <code>STRIPE_SECRET_KEY</code> (see docs/monetization.md).
         </p>
       </section>
-    </div>
-  )
-}
-
-function StatLike({ label, value }) {
-  return (
-    <div className="stat-card">
-      <span className="stat-label">{label}</span>
-      <span className="stat-value">{value}</span>
     </div>
   )
 }

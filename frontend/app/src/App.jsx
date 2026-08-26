@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import CadWorkspace from './views/CadWorkspace.jsx'
 import CreatePlanWorkspace from './views/CreatePlanWorkspace.jsx'
 import SurveyWorkspace from './views/SurveyWorkspace.jsx'
@@ -14,8 +14,16 @@ import CollaborationWorkspace from './views/CollaborationWorkspace.jsx'
 import EcosystemWorkspace from './views/EcosystemWorkspace.jsx'
 import GovernanceWorkspace from './views/GovernanceWorkspace.jsx'
 import AdminWorkspace from './views/AdminWorkspace.jsx'
+import LandingWorkspace from './views/LandingWorkspace.jsx'
+import BlogWorkspace from './views/BlogWorkspace.jsx'
+import FaqWorkspace from './views/FaqWorkspace.jsx'
+import CaseStudiesWorkspace from './views/CaseStudiesWorkspace.jsx'
+
+// Public / marketing views render their own <h1>, so the topbar must not add one.
+const SEO_VIEWS = ['landing', 'pricing', 'blog', 'faq', 'case-studies']
 
 const NAV = [
+  { id: 'landing', label: 'Home', icon: '🏠' },
   { id: 'cad', label: 'CAD Import', icon: '📐' },
   { id: 'plan', label: 'Create Plan', icon: '🧱' },
   { id: 'survey', label: 'Survey', icon: '🌍' },
@@ -30,10 +38,24 @@ const NAV = [
   { id: 'governance', label: 'Governance', icon: '🏛️' },
   { id: 'review', label: 'Review & Sign', icon: '✍️' },
   { id: 'pricing', label: 'Pricing', icon: '💳' },
+  { id: 'blog', label: 'Blog', icon: '✍️' },
+  { id: 'faq', label: 'FAQ', icon: '❓' },
+  { id: 'case-studies', label: 'Case Studies', icon: '📁' },
 ]
 
 export default function App() {
-  const [view, setView] = useState('cad')
+  const [view, setView] = useState('landing')
+
+  // Basic i18n for SEO: set <html> lang/dir from the browser language.
+  useEffect(() => {
+    const navLang = navigator.language || navigator.userLanguage || 'en'
+    const isAr = String(navLang).toLowerCase().startsWith('ar')
+    document.documentElement.lang = isAr ? 'ar' : 'en'
+    document.documentElement.dir = isAr ? 'rtl' : 'ltr'
+  }, [])
+
+  const current = NAV.find((n) => n.id === view)
+  const title = current?.label || 'Imad'
 
   return (
     <div className="app-shell">
@@ -65,12 +87,13 @@ export default function App() {
 
       <main className="content">
         <header className="topbar">
-          <h1>
-            {NAV.find((n) => n.id === view)?.label}
-          </h1>
+          {SEO_VIEWS.includes(view)
+            ? <p className="topbar-title">{title}</p>
+            : <h1>{title}</h1>}
           <div className="status-chip">Project #1 · Demo</div>
         </header>
         <section className="workspace">
+          {view === 'landing' && <LandingWorkspace />}
           {view === 'cad' && <CadWorkspace />}
           {view === 'plan' && <CreatePlanWorkspace />}
           {view === 'survey' && <SurveyWorkspace />}
@@ -86,6 +109,9 @@ export default function App() {
           {view === 'admin' && <AdminWorkspace />}
           {view === 'validation' && <ValidationWorkspace />}
           {view === 'pricing' && <PricingWorkspace />}
+          {view === 'blog' && <BlogWorkspace />}
+          {view === 'faq' && <FaqWorkspace />}
+          {view === 'case-studies' && <CaseStudiesWorkspace />}
         </section>
       </main>
     </div>
