@@ -41,6 +41,7 @@ const NAV = [
   { id: 'blog', label: 'Blog', icon: '✍️' },
   { id: 'faq', label: 'FAQ', icon: '❓' },
   { id: 'case-studies', label: 'Case Studies', icon: '📁' },
+  { id: 'admin', label: 'Admin', icon: '🛡️' },
 ]
 
 export default function App() {

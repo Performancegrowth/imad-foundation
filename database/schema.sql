@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT    NOT NULL UNIQUE COLLATE NOCASE,
     full_name     TEXT    NOT NULL,
     hashed_password TEXT  NOT NULL,
+    role          TEXT    NOT NULL DEFAULT 'engineer',   -- admin|engineer|viewer
     is_active     INTEGER NOT NULL DEFAULT 1,
     is_superuser  INTEGER NOT NULL DEFAULT 0,
     organization  TEXT,

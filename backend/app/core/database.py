@@ -8,6 +8,7 @@ migrations; this module will then become an engine/session layer only.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Generator, Optional
 
@@ -22,8 +23,20 @@ _SESSION_FACTORY: Optional[sessionmaker] = None
 
 
 def schema_root() -> Path:
-    """Absolute path to ``backend/database/schema.sql``."""
-    return Path(__file__).resolve().parents[2] / "database" / "schema.sql"
+    """Locate ``database/schema.sql`` across repo/Docker layouts.
+
+    Walks upward from this module until it finds a ``database/schema.sql``
+    sibling. Handles both the local checkout (``backend/app/core/...`` with
+    ``database/`` at the repo root) and the Docker layout (``/app/app/core/...``
+    with the schema mounted at ``/app/database/schema.sql``).
+    """
+    here = Path(__file__).resolve()
+    for parent in (here, *here.parents):
+        candidate = parent / "database" / "schema.sql"
+        if candidate.is_file():
+            return candidate
+    # Fallback to the old Docker convention so the failure is visible.
+    return here.parents[2] / "database" / "schema.sql"
 
 
 def _normalise_sqlite_url(url: str) -> str:
@@ -51,10 +64,31 @@ def _ensure_schema(engine: Engine) -> None:
         return
     with engine.begin() as conn:
         raw = loc.read_text(encoding="utf-8")
-        for statement in raw.split(";\n"):
-            cleaned = statement.strip()
-            if cleaned and not cleaned.startswith("--"):
-                conn.execute(text(cleaned))
+        # Split on statement terminator tolerating CRLF/LF line endings.
+        statements = [s.strip() for s in re.split(r";\r?\n", raw) if s.strip()]
+        for statement in statements:
+            # Drop full-line comments (header/seed) — inline "-- …" stays valid.
+            lines = [ln for ln in statement.splitlines() if not ln.lstrip().startswith("--")]
+            cleaned = "\n".join(lines).strip()
+            if not cleaned:
+                continue
+            conn.execute(text(cleaned))
+    # Legacy DBs created before the `role` column existed get it backfilled.
+    _ensure_users_role(engine)
+
+
+def _ensure_users_role(engine: Engine) -> None:
+    """Idempotently add the ``users.role`` column to older SQLite databases."""
+    if engine.dialect.name != "sqlite":
+        return
+    try:
+        cols = {c["name"] for c in engine.execute(text("PRAGMA table_info(users)")).mappings()}
+    except Exception:
+        return  # users table does not exist yet; fresh schema already has role
+    if cols and "role" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'engineer'"))
+        log.info("Added users.role column (legacy schema migration).")
 
 
 def init_db() -> None:
