@@ -4,6 +4,7 @@ import { login, register } from '../platformApi.js'
 
 export default function AuthWorkspace({ mode = 'login', onDone }) {
   const [mode_, setMode] = useState(mode) // switchable without remount
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
@@ -14,6 +15,10 @@ export default function AuthWorkspace({ mode = 'login', onDone }) {
   const submit = async (e) => {
     e.preventDefault()
     setErr('')
+    if (!isLogin && !fullName.trim()) {
+      setErr('Please enter your full name.')
+      return
+    }
     if (!email.trim() || !password) {
       setErr('Email and password are required.')
       return
@@ -31,9 +36,14 @@ export default function AuthWorkspace({ mode = 'login', onDone }) {
       if (isLogin) {
         await login(email.trim(), password) // platformApi stores the token
       } else {
-        const data = await register({ email: email.trim(), password })
+        // Backend requires full_name and returns {token:{access_token}} —
+        // platformApi.register normalizes it and stores the token for us.
+        const data = await register({
+          email: email.trim(),
+          password,
+          full_name: fullName.trim(),
+        })
         if (!data?.access_token) throw new Error(data?.detail || 'Registration failed.')
-        await login(email.trim(), password)
       }
       onDone?.()
     } catch (ex) {
@@ -54,6 +64,16 @@ export default function AuthWorkspace({ mode = 'login', onDone }) {
         </p>
         {err && <p className="form-error" role="alert">{err}</p>}
         <form onSubmit={submit} noValidate>
+          {!isLogin && (
+            <div className="field">
+              <label htmlFor="auth-name">Full name</label>
+              <input
+                id="auth-name" type="text" autoComplete="name" required
+                value={fullName} onChange={(e) => setFullName(e.target.value)}
+                placeholder="Eng. Your Name"
+              />
+            </div>
+          )}
           <div className="field">
             <label htmlFor="auth-email">Email</label>
             <input
