@@ -18,8 +18,10 @@ import LandingWorkspace from './views/LandingWorkspace.jsx'
 import BlogWorkspace from './views/BlogWorkspace.jsx'
 import FaqWorkspace from './views/FaqWorkspace.jsx'
 import CaseStudiesWorkspace from './views/CaseStudiesWorkspace.jsx'
+import AuthWorkspace from './views/AuthWorkspace.jsx'
+import AuthActions from './components/AuthActions.jsx'
+import { setToken } from './platformApi.js'
 
-// Public / marketing views render their own <h1>, so the topbar must not add one.
 const SEO_VIEWS = ['landing', 'pricing', 'blog', 'faq', 'case-studies']
 
 const NAV = [
@@ -46,8 +48,11 @@ const NAV = [
 
 export default function App() {
   const [view, setView] = useState('landing')
+  const [authMode, setAuthMode] = useState('login')
+  const [signedIn, setSignedIn] = useState(() => {
+    try { return !!localStorage.getItem('imad_token') } catch { return false }
+  })
 
-  // Basic i18n for SEO: set <html> lang/dir from the browser language.
   useEffect(() => {
     const navLang = navigator.language || navigator.userLanguage || 'en'
     const isAr = String(navLang).toLowerCase().startsWith('ar')
@@ -55,8 +60,11 @@ export default function App() {
     document.documentElement.dir = isAr ? 'rtl' : 'ltr'
   }, [])
 
-  const current = NAV.find((n) => n.id === view)
-  const title = current?.label || 'Imad'
+  const openAuth = (m) => { setAuthMode(m); setView('auth') }
+  const handleAuthed = () => { setSignedIn(true); setView('cad') }
+  const signOut = () => { setToken(''); setSignedIn(false); setView('landing') }
+
+  const title = NAV.find((n) => n.id === view)?.label || 'Imad'
 
   return (
     <div className="app-shell">
@@ -91,10 +99,11 @@ export default function App() {
           {SEO_VIEWS.includes(view)
             ? <p className="topbar-title">{title}</p>
             : <h1>{title}</h1>}
-          <div className="status-chip">Project #1 · Demo</div>
+          <AuthActions signedIn={signedIn} onOpen={openAuth} onSignOut={signOut} />
         </header>
         <section className="workspace">
-          {view === 'landing' && <LandingWorkspace />}
+          {view === 'landing' && <LandingWorkspace onNav={setView} onAuth={openAuth} />}
+          {view === 'auth' && <AuthWorkspace mode={authMode} key={authMode} onDone={handleAuthed} />}
           {view === 'cad' && <CadWorkspace />}
           {view === 'plan' && <CreatePlanWorkspace />}
           {view === 'survey' && <SurveyWorkspace />}

@@ -17,7 +17,7 @@ const FEATURES = [
   'Compliance with ACI 318, Eurocode 2, SBC 304',
 ]
 
-export default function LandingWorkspace() {
+export default function LandingWorkspace({ onNav, onAuth }) {
   return (
     <div className="workspace-grid">
       <Seo
@@ -39,8 +39,13 @@ export default function LandingWorkspace() {
           <strong>Eurocode 2</strong> and <strong>SBC 304</strong>.
         </p>
         <div className="inline-controls">
-          <button className="btn primary">Start Free</button>
-          <button className="btn">View Pricing</button>
+          <button className="btn primary" onClick={() => onAuth?.('register')} aria-label="Create your free Imad account">
+            Start Free — Sign Up
+          </button>
+          <button className="btn" onClick={() => onAuth?.('login')} aria-label="Log in to your Imad account">
+            Login
+          </button>
+          <button className="btn" onClick={() => onNav?.('pricing')}>View Pricing</button>
         </div>
       </section>
 
@@ -66,7 +71,7 @@ export default function LandingWorkspace() {
       <section className="card span-2" aria-labelledby="landing-faq">
         <div className="card-header">
           <h2 id="landing-faq">Frequently asked questions</h2>
-          <button className="btn small">View all FAQs</button>
+          <button className="btn small" onClick={() => onNav?.('faq')}>View all FAQs</button>
         </div>
         <div className="faq-preview">
           {FAQS.slice(0, 5).map((f) => (

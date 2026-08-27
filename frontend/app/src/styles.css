@@ -240,3 +240,35 @@ textarea { resize: vertical; }
 .faq-item summary { cursor: pointer; font-weight: 600; }
 .faq-item[open] summary { color: var(--primary-dark); }
 .hero-card { gap: 16px; }
+/* ── Authentication UI (topbar actions + auth screen) ─────────────────── */
+.tb-auth { display: flex; align-items: center; gap: 8px; }
+.userchip {
+  font-size: 12px; font-weight: 600; color: #0a5c36;
+  background: #e7f2ec; border: 1px solid #bcd9c9;
+  padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+}
+.auth-wrap { max-width: 430px; margin: 16px auto; }
+.auth-card h2 { margin-top: 0; }
+.auth-card p.muted { margin-top: -6px; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field label { font-size: 13px; font-weight: 600; color: #111827; }
+.field input {
+  padding: 10px 12px; font: inherit; background: #fff;
+  border: 1px solid #cbd5e1; border-radius: 8px; color: #111827;
+}
+.field input:focus-visible { outline: 2px solid var(--secondary); outline-offset: 1px; }
+.form-error {
+  color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 8px; padding: 10px 12px; font-size: 14px; margin: 0 0 12px;
+}
+.auth-actions-row { display: flex; gap: 10px; align-items: center; }
+.auth-alt { font-size: 14px; color: #6b7280; margin-top: 14px; }
+.auth-alt button {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--primary); font-weight: 600; font-size: inherit;
+}
+.auth-alt button:hover { text-decoration: underline; }
+
+@media (max-width: 720px) {
+  .userchip { display: none; }
+}
