@@ -89,7 +89,10 @@ class OllamaLocalProvider(AIProvider):
     async def chat_json(
         self, messages: List[BaseMessage], temperature: float = 0.2
     ) -> Dict[str, Any]:
-        raw = self.chat(messages, temperature=temperature)
+        # Run the blocking urllib call off the event loop so long Ollama
+        # generations (up to the 120s urllib timeout) don't stall other requests.
+        import asyncio
+        raw = await asyncio.to_thread(self.chat, messages, temperature=temperature)
         return _extract_json_dict(raw)
 
 

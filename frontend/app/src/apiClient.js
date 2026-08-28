@@ -13,9 +13,16 @@ export async function request(path, options = {}) {
   if (_token) headers.Authorization = `Bearer ${_token}`
   let body = options.body
   if (body && !(body instanceof FormData)) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(body) }
+  // Default 120s timeout for slow AI generations; callers can override timeoutMs.
+  const timeoutMs = options.timeoutMs ?? 120000
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   let res
-  try { res = await fetch(BASE + path, { ...options, headers, body }) }
-  catch { throw new Error('Network error reaching ' + BASE + path) }
+  try { res = await fetch(BASE + path, { ...options, headers, body, signal: controller.signal }) }
+  catch (err) {
+    if (err.name === 'AbortError') { const e = new Error('Request timed out'); e.status = 408; throw e }
+    throw new Error('Network error reaching ' + BASE + path)
+  } finally { clearTimeout(timer) }
   if (!res.ok) {
     let detail = res.statusText
     try { detail = (await res.json())?.detail ?? detail } catch {}

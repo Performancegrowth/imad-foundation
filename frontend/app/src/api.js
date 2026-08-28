@@ -8,7 +8,24 @@ async function request(path, options = {}) {
     headers['Content-Type'] = 'application/json'
     options.body = JSON.stringify(options.body)
   }
-  const res = await fetch(`${BASE}${path}`, { ...options, headers })
+  // Default 120s request timeout so slow AI generations (Ollama description,
+  // analysis, BOQ) don't hang the UI; callers can override via options.timeoutMs.
+  const timeoutMs = options.timeoutMs ?? 120000
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal })
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const e = new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`)
+      e.status = 408
+      throw e
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.ok) {
     let detail = res.statusText
     try {
