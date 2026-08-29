@@ -19,7 +19,9 @@ from app.services.validation_engine import ValidationError, run_suite, validatio
 log = logging.getLogger("imad.api.validation")
 router = APIRouter()
 
-KNOWN_CASES = ["beam", "column", "frame"]
+KNOWN_CASES = ["beam_udl", "column_gravity", "frame_elf"]
+# Accept either the canonical engine ids above or the friendly aliases below.
+_CASE_ALIASES = {"beam": "beam_udl", "column": "column_gravity", "frame": "frame_elf"}
 
 
 class ValidationRunRequest(BaseModel):
@@ -29,6 +31,8 @@ class ValidationRunRequest(BaseModel):
 @router.post("/validation/run", summary="Run benchmark suite vs hand calculations")
 async def run(payload: ValidationRunRequest) -> Dict[str, Any]:
     cases = payload.cases or None
+    if cases:
+        cases = [_CASE_ALIASES.get(c, c) for c in cases]
     if cases:
         unknown = [c for c in cases if c not in KNOWN_CASES]
         if unknown:

@@ -14,8 +14,10 @@ from app.core.security import decode_access_token
 router = APIRouter()
 
 
-def _current_uid(authorization: str = Header(...)) -> int:
+def _current_uid(authorization: str | None = Header(default=None)) -> int:
     """Extract + decode a bearer token; return the authenticated user id."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authentication required.")
     if not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Malformed bearer token")
     raw = authorization.split(" ", 1)[1].strip()
@@ -82,4 +84,24 @@ async def create_project(
     row = db.execute(
         text("SELECT * FROM projects WHERE id = :id"), {"id": int(result.lastrowid)}
     ).mappings().first()
+    return schemas.Project(**dict(row))
+
+
+@router.get(
+    "/{project_id}",
+    response_model=schemas.Project,
+    summary="Fetch a single project owned by the caller",
+)
+async def get_project(
+    project_id: int,
+    owner_id: int = Depends(_current_uid),
+    db: Session = Depends(get_session),
+):
+    """Return one of the caller's projects by id."""
+    row = db.execute(
+        text("SELECT * FROM projects WHERE id = :id AND owner_id = :owner"),
+        {"id": project_id, "owner": owner_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found.")
     return schemas.Project(**dict(row))

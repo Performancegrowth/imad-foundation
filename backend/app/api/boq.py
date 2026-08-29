@@ -26,6 +26,7 @@ class GenerateBOQRequest(BaseModel):
     plan: Optional[Dict[str, Any]] = None            # inline PlanData dict
     plan_name: Optional[str] = None                  # or a saved plan name
     survey: Optional[Dict[str, Any]] = None          # SurveyReading dict
+    options: Optional[Dict[str, Any]] = None         # opt-in async via options.async
 
 
 def _resolve_plan(payload: GenerateBOQRequest) -> PlanData:
@@ -44,9 +45,11 @@ def _resolve_plan(payload: GenerateBOQRequest) -> PlanData:
 
 @router.post("/generate-boq", summary="Generate a detailed BOQ + BBS")
 async def generate(payload: GenerateBOQRequest) -> Dict[str, Any]:
-    """Validate input, then enqueue or run synchronously."""
+    """Run synchronously by default so callers get the full BOQ payload (same
+    contract as /analyze). Background execution (Redis + worker) is an explicit
+    opt-in via ``options: {"async": true}`` — the response then carries a job_id."""
     data = payload.model_dump()
-    if jobs.queue_available():
+    if (payload.options or {}).get("async"):
         return {"job_id": jobs.enqueue_job("boq", data)}
     return run_boq(data)
 

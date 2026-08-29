@@ -33,6 +33,7 @@ class CarbonReportRequest(BaseModel):
     plan: Optional[Dict[str, Any]] = None
     plan_name: Optional[str] = None
     survey: Optional[Dict[str, Any]] = None
+    options: Optional[Dict[str, Any]] = None         # opt-in async via options.async
 
 
 async def _build(boq: Dict[str, Any]) -> Dict[str, Any]:
@@ -58,9 +59,11 @@ async def _build(boq: Dict[str, Any]) -> Dict[str, Any]:
 
 @router.post("/carbon-report", summary="Full embodied-carbon report from a plan or BOQ")
 async def carbon_report(payload: CarbonReportRequest) -> Dict[str, Any]:
-    """Validate input, then enqueue a background job or run synchronously."""
+    """Run synchronously by default so callers get the full report payload (same
+    contract as /analyze and /generate-boq). Background execution is an explicit
+    opt-in via ``options: {"async": true}`` — response then carries a job_id."""
     data = payload.model_dump()
-    if jobs.queue_available():
+    if (payload.options or {}).get("async"):
         return {"job_id": jobs.enqueue_job("carbon", data)}
     return await run_carbon(data)
 

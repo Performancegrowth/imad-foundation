@@ -171,29 +171,76 @@ class PlanGenerator(ABC):
         return plan
 
     async def generate_from_description(self, text: str, floors: int = 1) -> PlanData:
-        """Ask the local AI to convert a plain-language description to layout."""
+        """Ask the local AI to convert a plain-language description to layout.
+
+        Sanitises the model's JSON (clamping dimensions to the valid 1–300 m /
+        1–30 floor envelope, coercing non-numeric junk back to sane defaults)
+        and retries once with a simpler prompt before surfacing a clear,
+        user-friendly error.
+        """
+        return await self._describe(text, floors, retry=True)
+
+    async def _describe(self, text: str, floors: int, retry: bool) -> PlanData:
         instruction = (
             "You convert human building descriptions into structured JSON "
             "representing a rectangular floor plan in metres. Return ONLY a JSON "
-            "object with keys: length_m (number), width_m (number), bays_x (int), "
-            "bays_y (int), use (string). No prose, no markdown."
+            "object with keys: length_m (number between 5 and 50), width_m (number "
+            "between 5 and 50), bays_x (int 1-5), bays_y (int 1-5), use (string). "
+            "No prose, no markdown."
         )
-        reply = await self.ai.chat_json([
-            BaseMessage(Role.SYSTEM, instruction),
-            BaseMessage(Role.USER, text),
-        ])
+        try:
+            reply = await self.ai.chat_json([
+                BaseMessage(Role.SYSTEM, instruction),
+                BaseMessage(Role.USER, text),
+            ])
+        except Exception as exc:  # AI unreachable → deterministic fallback
+            log.warning("AI unavailable for description (%s); using defaults", exc)
+            if retry:
+                return await self._describe("a modest two-storey building", floors,
+                                            retry=False)
+            raise PlanGenerationError(
+                "AI could not generate a valid plan. Please try a simpler "
+                "description or use Template/Questionnaire.") from exc
+
+        length = self._safe_number(reply.get("length_m"), 12.0, 1.0, 300.0)
+        width = self._safe_number(reply.get("width_m"), 8.0, 1.0, 300.0)
+        bays_x = int(self._safe_number(reply.get("bays_x"), 2, 1, 10))
+        bays_y = int(self._safe_number(reply.get("bays_y"), 1, 1, 10))
+        use = str(reply.get("use") or "generic")[-40:]
+
         answers = {
-            "length_m": reply.get("length_m", 12.0),
-            "width_m": reply.get("width_m", 8.0),
-            "bays_x": reply.get("bays_x", 2),
-            "bays_y": reply.get("bays_y", 1),
-            "floors": max(1, int(floors)),
-            "use": reply.get("use", "generic"),
+            "length_m": length,
+            "width_m": width,
+            "bays_x": bays_x,
+            "bays_y": bays_y,
+            "floors": max(1, min(30, int(floors))),
+            "use": use,
         }
-        plan = self.generate_from_questionnaire(answers)
+        try:
+            plan = self.generate_from_questionnaire(answers)
+        except PlanGenerationError:
+            # Clamped values can still be non-sensical (e.g. tiny/ludicrous
+            # aspect) — retry once with a simpler, deterministic prompt.
+            if retry:
+                return await self._describe("a square building 12 by 10 metres",
+                                            floors, retry=False)
+            raise PlanGenerationError(
+                "AI could not generate a valid plan. Please try a simpler "
+                "description or use Template/Questionnaire.")
         plan.source = "ai"
         plan.original = {"description": text}
         return plan
+
+    @staticmethod
+    def _safe_number(value: Any, default: float, lo: float, hi: float) -> float:
+        """Coerce arbitrary AI output to a float inside [lo, hi]."""
+        try:
+            num = float(value)
+        except (TypeError, ValueError):
+            num = default
+        if not (lo <= num <= hi):
+            num = default
+        return round(num, 2)
 
     # -- persistence -----------------------------------------------------
     def save_plan(self, project_id: int, name: str, plan: PlanData) -> Dict[str, Any]:
