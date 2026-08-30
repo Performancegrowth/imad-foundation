@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api, DEFAULT_PROJECT_ID } from '../api.js'
+import { useNavigate } from 'react-router-dom'
+import { api, setActiveProject } from '../api.js'
+import { useProjectId } from '../useProjectId.jsx'
 import PlanViewer from '../components/PlanViewer.jsx'
 
 const TABS = ['questionnaire', 'templates', 'description']
@@ -20,6 +22,8 @@ export default function CreatePlanWorkspace() {
   const [description, setDescription] = useState('')
   const [savedPlans, setSavedPlans] = useState([])
   const [planName, setPlanName] = useState('')
+  const projectId = useProjectId(1)
+  const navigate = useNavigate()
 
   useEffect(() => {
     api.listTemplates().then(setTemplates).catch(() => setTemplates([]))
@@ -28,7 +32,7 @@ export default function CreatePlanWorkspace() {
   }, [])
 
   const refreshSaved = () => {
-    api.listPlans(DEFAULT_PROJECT_ID).then(setSavedPlans).catch(() => setSavedPlans([]))
+    api.listPlans(projectId).then(setSavedPlans).catch(() => setSavedPlans([]))
   }
 
   const run = async (fn) => {
@@ -52,8 +56,10 @@ export default function CreatePlanWorkspace() {
     if (!planName.trim()) { setError('Give the plan a name before saving.'); return }
     setBusy(true); setError(null); setNotice(null)
     try {
-      await api.savePlan(DEFAULT_PROJECT_ID, planName.trim(), plan)
-      setNotice(`Plan "${planName.trim()}" saved.`); refreshSaved()
+      await api.savePlan(projectId, planName.trim(), plan)
+      setActiveProject(projectId)
+      setNotice(`Plan "${planName.trim()}" saved — opening Survey…`); refreshSaved()
+      setTimeout(() => navigate(`/project/${projectId}/survey`), 900)
     } catch (err) { setError(err.message || 'Save failed') }
     finally { setBusy(false) }
   }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import CadWorkspace from './views/CadWorkspace.jsx'
 import CreatePlanWorkspace from './views/CreatePlanWorkspace.jsx'
 import SurveyWorkspace from './views/SurveyWorkspace.jsx'
@@ -21,37 +22,76 @@ import CaseStudiesWorkspace from './views/CaseStudiesWorkspace.jsx'
 import AuthWorkspace from './views/AuthWorkspace.jsx'
 import AuthActions from './components/AuthActions.jsx'
 import { setToken } from './platformApi.js'
-
-const SEO_VIEWS = ['landing', 'pricing', 'blog', 'faq', 'case-studies']
+import { readStoredProject } from './useProjectId.jsx'
 
 const NAV = [
-  { id: 'landing', label: 'Home', icon: '🏠' },
-  { id: 'cad', label: 'CAD Import', icon: '📐' },
-  { id: 'plan', label: 'Create Plan', icon: '🧱' },
-  { id: 'survey', label: 'Survey', icon: '🌍' },
-  { id: 'analysis', label: 'Analyze', icon: '📊' },
-  { id: 'generative', label: 'Generate Designs', icon: '🧬' },
-  { id: 'boq', label: 'BOQ & BBS', icon: '📋' },
-  { id: 'carbon', label: 'Sustainability', icon: '🌱' },
-  { id: 'validation', label: 'Validation', icon: '🔬' },
-  { id: 'building3d', label: 'Building 3D', icon: '🏢' },
-  { id: 'collaboration', label: 'Collaboration', icon: '🤝' },
-  { id: 'ecosystem', label: 'Ecosystem', icon: '🌐' },
-  { id: 'governance', label: 'Governance', icon: '🏛️' },
-  { id: 'review', label: 'Review & Sign', icon: '✍️' },
-  { id: 'pricing', label: 'Pricing', icon: '💳' },
-  { id: 'blog', label: 'Blog', icon: '✍️' },
-  { id: 'faq', label: 'FAQ', icon: '❓' },
-  { id: 'case-studies', label: 'Case Studies', icon: '📁' },
-  { id: 'admin', label: 'Admin', icon: '🛡️' },
+  { id: 'welcome', label: 'Home', icon: '🏠', to: '/welcome' },
+  { id: 'plan', label: 'Create Plan', icon: '🧱', to: '/create-plan' },
+  { id: 'cad', label: 'CAD Import', icon: '📐', to: '/cad' },
+  { id: 'generative', label: 'Generate Designs', icon: '🧬', to: '/generative' },
+  { id: 'survey', label: 'Survey', icon: '🌍', to: '/project/:projectId/survey', scoped: true },
+  { id: 'analysis', label: 'Analyze', icon: '📊', to: '/project/:projectId/analyze', scoped: true },
+  { id: 'boq', label: 'BOQ & BBS', icon: '📋', to: '/project/:projectId/boq', scoped: true },
+  { id: 'carbon', label: 'Sustainability', icon: '🌱', to: '/project/:projectId/carbon', scoped: true },
+  { id: 'validation', label: 'Validation', icon: '🔬', to: '/project/:projectId/validation', scoped: true },
+  { id: 'building3d', label: 'Building 3D', icon: '🏢', to: '/project/:projectId/3d', scoped: true },
+  { id: 'collaboration', label: 'Collaboration', icon: '🤝', to: '/project/:projectId/collaboration', scoped: true },
+  { id: 'ecosystem', label: 'Ecosystem', icon: '🌐', to: '/project/:projectId/ecosystem', scoped: true },
+  { id: 'governance', label: 'Governance', icon: '🏛️', to: '/project/:projectId/governance', scoped: true },
+  { id: 'review', label: 'Review & Sign', icon: '✍️', to: '/project/:projectId/review', scoped: true },
+  { id: 'admin', label: 'Admin', icon: '🛡️', to: '/project/:projectId/admin', scoped: true },
+  { id: 'pricing', label: 'Pricing', icon: '💳', to: '/pricing' },
+  { id: 'blog', label: 'Blog', icon: '✍️', to: '/blog' },
+  { id: 'faq', label: 'FAQ', icon: '❓', to: '/faq' },
+  { id: 'case-studies', label: 'Case Studies', icon: '📁', to: '/case-studies' },
 ]
 
-export default function App() {
-  const [view, setView] = useState('landing')
+function currentPid(pathname) {
+  const m = pathname.match(/^\/project\/(\d+)/)
+  if (m) return m[1]
+  const stored = readStoredProject()
+  return stored != null ? String(stored) : null
+}
+
+function Sidebar() {
+  const { pathname } = useLocation()
+  const pid = currentPid(pathname)
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true">ع</span>
+        <div className="brand-text"><strong>Imad</strong><span>Engineering Engine</span></div>
+      </div>
+      <nav aria-label="Workspace">
+        {NAV.map((item) => {
+          const to = item.to.replace(':projectId', pid == null ? '' : pid)
+          const disabled = item.scoped && pid == null
+          return disabled ? (
+            <button key={item.id} className="nav-item" disabled
+              title="Create or select a project first" aria-disabled="true">
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.label}
+            </button>
+          ) : (
+            <NavLink key={item.id} to={to}
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.label}
+            </NavLink>
+          )
+        })}
+      </nav>
+      <div className="sidebar-footer"><span className="version">v0.9 · Sprints 0–14</span></div>
+    </aside>
+  )
+}
+
+function Shell() {
   const [authMode, setAuthMode] = useState('login')
   const [signedIn, setSignedIn] = useState(() => {
     try { return !!localStorage.getItem('imad_token') } catch { return false }
   })
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const pid = currentPid(pathname)
 
   useEffect(() => {
     const navLang = navigator.language || navigator.userLanguage || 'en'
@@ -60,70 +100,62 @@ export default function App() {
     document.documentElement.dir = isAr ? 'rtl' : 'ltr'
   }, [])
 
-  const openAuth = (m) => { setAuthMode(m); setView('auth') }
-  const handleAuthed = () => { setSignedIn(true); setView('cad') }
-  const signOut = () => { setToken(''); setSignedIn(false); setView('landing') }
-
-  const title = NAV.find((n) => n.id === view)?.label || 'Imad'
+  const current = NAV.find((n) => pathname === n.to.replace(':projectId', pid == null ? '' : pid))
+  const title = current?.label || 'Imad'
+  const seo = ['welcome', 'pricing', 'blog', 'faq', 'case-studies'].includes(current?.id)
+  const openAuth = (mode) => { setAuthMode(mode); navigate('/auth') }
+  const handleAuthed = () => { setSignedIn(true); navigate('/create-plan') }
+  const signOut = () => { setToken(''); setSignedIn(false); navigate('/') }
+  const pathFor = (id) => {
+    const item = NAV.find((n) => n.id === id)
+    if (!item) return '/create-plan'
+    if (item.scoped && pid == null) return '/create-plan'
+    return item.to.replace(':projectId', pid == null ? '' : pid)
+  }
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">ع</span>
-          <div className="brand-text">
-            <strong>Imad</strong>
-            <span>Engineering Engine</span>
-          </div>
-        </div>
-        <nav aria-label="Workspace">
-          {NAV.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-item ${view === item.id ? 'active' : ''}`}
-              onClick={() => setView(item.id)}
-              aria-current={view === item.id ? 'page' : undefined}
-            >
-              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <span className="version">v0.9 · Sprints 0–14</span>
-        </div>
-      </aside>
-
+      <Sidebar />
       <main className="content">
         <header className="topbar">
-          {SEO_VIEWS.includes(view)
-            ? <p className="topbar-title">{title}</p>
-            : <h1>{title}</h1>}
+          {seo ? <p className="topbar-title">{title}</p> : <h1>{title}</h1>}
           <AuthActions signedIn={signedIn} onOpen={openAuth} onSignOut={signOut} />
         </header>
         <section className="workspace">
-          {view === 'landing' && <LandingWorkspace onNav={setView} onAuth={openAuth} />}
-          {view === 'auth' && <AuthWorkspace mode={authMode} key={authMode} onDone={handleAuthed} />}
-          {view === 'cad' && <CadWorkspace />}
-          {view === 'plan' && <CreatePlanWorkspace />}
-          {view === 'survey' && <SurveyWorkspace />}
-          {view === 'analysis' && <AnalysisWorkspace />}
-          {view === 'generative' && <GenerativeDesignWorkspace />}
-          {view === 'boq' && <BoqWorkspace />}
-          {view === 'carbon' && <CarbonWorkspace />}
-          {view === 'building3d' && <Building3DWorkspace />}
-          {view === 'collaboration' && <CollaborationWorkspace />}
-          {view === 'ecosystem' && <EcosystemWorkspace />}
-          {view === 'governance' && <GovernanceWorkspace />}
-          {view === 'review' && <ReviewWorkspace />}
-          {view === 'admin' && <AdminWorkspace />}
-          {view === 'validation' && <ValidationWorkspace />}
-          {view === 'pricing' && <PricingWorkspace />}
-          {view === 'blog' && <BlogWorkspace />}
-          {view === 'faq' && <FaqWorkspace />}
-          {view === 'case-studies' && <CaseStudiesWorkspace />}
+          <Routes>
+            <Route path="/" element={<Navigate to="/create-plan" replace />} />
+            <Route path="/welcome" element={<LandingWorkspace onNav={pathFor} onAuth={openAuth} />} />
+            <Route path="/auth" element={<AuthWorkspace mode={authMode} key={authMode} onDone={handleAuthed} />} />
+            <Route path="/create-plan" element={<CreatePlanWorkspace />} />
+            <Route path="/cad" element={<CadWorkspace />} />
+            <Route path="/generative" element={<GenerativeDesignWorkspace />} />
+            <Route path="/project/:projectId/survey" element={<SurveyWorkspace />} />
+            <Route path="/project/:projectId/analyze" element={<AnalysisWorkspace />} />
+            <Route path="/project/:projectId/boq" element={<BoqWorkspace />} />
+            <Route path="/project/:projectId/carbon" element={<CarbonWorkspace />} />
+            <Route path="/project/:projectId/validation" element={<ValidationWorkspace />} />
+            <Route path="/project/:projectId/3d" element={<Building3DWorkspace />} />
+            <Route path="/project/:projectId/collaboration" element={<CollaborationWorkspace />} />
+            <Route path="/project/:projectId/ecosystem" element={<EcosystemWorkspace />} />
+            <Route path="/project/:projectId/governance" element={<GovernanceWorkspace />} />
+            <Route path="/project/:projectId/review" element={<ReviewWorkspace />} />
+            <Route path="/project/:projectId/admin" element={<AdminWorkspace />} />
+            <Route path="/pricing" element={<PricingWorkspace />} />
+            <Route path="/blog" element={<BlogWorkspace />} />
+            <Route path="/faq" element={<FaqWorkspace />} />
+            <Route path="/case-studies" element={<CaseStudiesWorkspace />} />
+            <Route path="*" element={<Navigate to="/create-plan" replace />} />
+          </Routes>
         </section>
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Shell />
+    </BrowserRouter>
   )
 }

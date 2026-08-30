@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, DEFAULT_PROJECT_ID } from '../api.js'
+import { api } from '../api.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 import StructureViewer from '../components/StructureViewer.jsx'
 
 // Deterministic demo frame used when no plan has been saved yet, so the
@@ -41,9 +42,12 @@ export default function AnalysisWorkspace() {
   const [savedPlans, setSavedPlans] = useState([])
   const [selectedName, setSelectedName] = useState('')
 
+  const projectId = useProjectId()
+
   useEffect(() => {
-    api.listPlans(DEFAULT_PROJECT_ID).then(setSavedPlans).catch(() => setSavedPlans([]))
-  }, [])
+    if (!projectId) return
+    api.listPlans(projectId).then(setSavedPlans).catch(() => setSavedPlans([]))
+  }, [projectId])
 
   const analyze = useCallback(async (payload) => {
     setBusy(true); setError(null); setResult(null)
@@ -61,16 +65,18 @@ export default function AnalysisWorkspace() {
   const analyzeDemo = () => {
     const p = makeDemoPlan()
     setPlan(p)
-    analyze({ project_id: DEFAULT_PROJECT_ID, plan: p })
+    analyze({ project_id: projectId, plan: p })
   }
 
   const analyzeSaved = () => {
     if (!selectedName) return
-    analyze({ project_id: DEFAULT_PROJECT_ID, plan_name: selectedName })
+    analyze({ project_id: projectId, plan_name: selectedName })
   }
 
   const fmt = (v, unit) =>
     v === undefined || v === null ? '—' : `${Number(v).toLocaleString()} ${unit}`
+
+  if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">

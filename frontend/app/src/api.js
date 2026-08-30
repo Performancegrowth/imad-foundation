@@ -2,8 +2,17 @@
 // Uses the Vite dev proxy (see vite.config.js) so requests go to /api/... .
 const BASE = import.meta.env.VITE_APP_API_BASE || '/api/v1'
 
+// Read the JWT the AuthWorkspace stores on login/register.
+function getToken() {
+  try { return localStorage.getItem('imad_token') || '' } catch { return '' }
+}
+
 async function request(path, options = {}) {
   const headers = { ...(options.headers || {}) }
+  // Attach the bearer token so authenticated endpoints (plans, projects, …)
+  // keep working after plan routes were secured.
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
   if (options.body && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
     options.body = JSON.stringify(options.body)
@@ -222,4 +231,17 @@ export const api = {
   supportAgent: (payload) => request('/agents/support', { method: 'POST', body: payload }),
 }
 
-export const DEFAULT_PROJECT_ID = 1
+// Active project is persisted so the plan a user saves carries across every
+// project-scoped workspace (Survey, Analysis, BOQ, Carbon, 3D, …). Falls back
+// to project 1 when nothing has been selected yet.
+export const DEFAULT_PROJECT_ID = (() => {
+  try { return parseInt(localStorage.getItem('imad_last_project') || '1', 10) || 1 } catch { return 1 }
+})()
+
+export function setActiveProject(id) {
+  try { if (id) localStorage.setItem('imad_last_project', String(id)) } catch { /* ignore */ }
+}
+
+export function getActiveProject() {
+  try { return localStorage.getItem('imad_last_project') || null } catch { return null }
+}

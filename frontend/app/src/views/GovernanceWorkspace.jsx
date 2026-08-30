@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { generateSubmissionPackage, getAuditLog, getComplianceReport, getSubmissionPackage } from '../platformApi.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
 
 export default function GovernanceWorkspace() {
-  const projectId = 1
+  const projectId = useProjectId()
   const [designId] = useState('res_demo')
   const [report, setReport] = useState(null)
   const [pkg, setPkg] = useState([])
@@ -34,6 +35,8 @@ export default function GovernanceWorkspace() {
   const passed = rows.filter((c) => c.status === 'pass').length
   const warns = rows.filter((c) => c.status === 'warn').length
   const failed = rows.filter((c) => c.status === 'fail').length
+
+  if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">

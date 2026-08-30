@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getConsultants, getCostData, getSuppliers, requestConsultantReview } from '../platformApi.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
 
 const toArr = (d, k) => (Array.isArray(d) ? d : d?.[k] ?? [])
 
 export default function EcosystemWorkspace() {
+  const projectId = useProjectId()
   const [suppliers, setSuppliers] = useState([])
   const [consultants, setConsultants] = useState([])
   const [costs, setCosts] = useState([])
@@ -24,8 +26,10 @@ export default function EcosystemWorkspace() {
     () => suppliers.filter((s) => `${s.name ?? ''} ${s.region ?? ''} ${s.type ?? ''}`.toLowerCase().includes(q.toLowerCase())),
     [suppliers, q])
 
+  if (!projectId) return <NoProject />
+
   const review = async (c) => {
-    try { const r = await requestConsultantReview({ consultant_id: c.id, project_id: 1 }); alert(`Review request sent — ${r.status ?? 'pending'}`) }
+    try { const r = await requestConsultantReview({ consultant_id: c.id, project_id: projectId }); alert(`Review request sent — ${r.status ?? 'pending'}`) }
     catch (e) { setErr(e.message) }
   }
 

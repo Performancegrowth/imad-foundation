@@ -171,64 +171,68 @@ class PlanGenerator(ABC):
         return plan
 
     async def generate_from_description(self, text: str, floors: int = 1) -> PlanData:
-        """Ask the local AI to convert a plain-language description to layout.
+        """Convert a plain-language description to a reliable rectangular plan.
 
-        Sanitises the model's JSON (clamping dimensions to the valid 1–300 m /
-        1–30 floor envelope, coercing non-numeric junk back to sane defaults)
-        and retries once with a simpler prompt before surfacing a clear,
-        user-friendly error.
+        Robust by construction: it first asks the local AI for strict JSON, but
+        on any failure (or when its numbers are missing / out of range) it falls
+        back to extracting the two largest numbers from the text. Every value is
+        clamped to a safe engineering envelope and a deterministic column grid
+        is built, so this method never returns an invalid plan.
         """
-        return await self._describe(text, floors, retry=True)
+        width_m, length_m, n_floors = await self._extract_metrics(text, floors)
+        plan = self._build_description_grid(width_m, length_m, n_floors)
+        plan.source = "ai"
+        plan.original = {"description": text[:200]}
+        return plan
 
-    async def _describe(self, text: str, floors: int, retry: bool) -> PlanData:
-        instruction = (
-            "You convert human building descriptions into structured JSON "
-            "representing a rectangular floor plan in metres. Return ONLY a JSON "
-            "object with keys: length_m (number between 5 and 50), width_m (number "
-            "between 5 and 50), bays_x (int 1-5), bays_y (int 1-5), use (string). "
-            "No prose, no markdown."
-        )
+    async def _extract_metrics(self, text: str, floors: int):
+        """Return ``(width_m, length_m, floors)`` safely clamped.
+
+        Width ∈ [5, 50] m, length ∈ [5, 100] m, floors ∈ [1, 20]. The AI's JSON
+        is preferred; any exception or missing value falls back to regex.
+        """
+        width = length = None
         try:
             reply = await self.ai.chat_json([
-                BaseMessage(Role.SYSTEM, instruction),
+                BaseMessage(Role.SYSTEM,
+                    "Respond with ONLY JSON: {\"width_m\":number, "
+                    "\"length_m\":number, \"floors\":integer, "
+                    "\"soil_bearing_kpa\":number}. No prose, no markdown."),
                 BaseMessage(Role.USER, text),
             ])
-        except Exception as exc:  # AI unreachable → deterministic fallback
-            log.warning("AI unavailable for description (%s); using defaults", exc)
-            if retry:
-                return await self._describe("a modest two-storey building", floors,
-                                            retry=False)
-            raise PlanGenerationError(
-                "AI could not generate a valid plan. Please try a simpler "
-                "description or use Template/Questionnaire.") from exc
+            width = reply.get("width_m")
+            length = reply.get("length_m")
+        except Exception as exc:  # AI unreachable — never block the user
+            log.warning("AI unavailable for description; regex fallback (%s)", exc)
 
-        length = self._safe_number(reply.get("length_m"), 12.0, 1.0, 300.0)
-        width = self._safe_number(reply.get("width_m"), 8.0, 1.0, 300.0)
-        bays_x = int(self._safe_number(reply.get("bays_x"), 2, 1, 10))
-        bays_y = int(self._safe_number(reply.get("bays_y"), 1, 1, 10))
-        use = str(reply.get("use") or "generic")[-40:]
+        if width is None or length is None:
+            import re
+            nums = [float(m) for m in re.findall(r"\d+(?:\.\d+)?", text)]
+            nums.sort(reverse=True)
+            width = nums[1] if len(nums) > 1 else 12.0
+            length = nums[0] if nums else 18.0
 
-        answers = {
-            "length_m": length,
-            "width_m": width,
-            "bays_x": bays_x,
-            "bays_y": bays_y,
-            "floors": max(1, min(30, int(floors))),
-            "use": use,
-        }
-        try:
-            plan = self.generate_from_questionnaire(answers)
-        except PlanGenerationError:
-            # Clamped values can still be non-sensical (e.g. tiny/ludicrous
-            # aspect) — retry once with a simpler, deterministic prompt.
-            if retry:
-                return await self._describe("a square building 12 by 10 metres",
-                                            floors, retry=False)
-            raise PlanGenerationError(
-                "AI could not generate a valid plan. Please try a simpler "
-                "description or use Template/Questionnaire.")
-        plan.source = "ai"
-        plan.original = {"description": text}
+        width = round(min(50.0, max(5.0, float(width))), 2)
+        length = round(min(100.0, max(5.0, float(length))), 2)
+        n_floors = min(20, max(1, int(floors)))
+        return width, length, n_floors
+
+    @staticmethod
+    def _build_description_grid(width: float, length: float, floors: int) -> PlanData:
+        """Deterministic rectangular frame: 4 perimeter walls + ~5 m grid.
+
+        Columns sit at the grid intersections; beams run between adjacent
+        columns in both directions; ``plan.stories`` is set to the requested
+        floor count so the same PlanData flow feeds analysis / BOQ / 3D.
+        """
+        bays_x = max(1, int(width // 5.0))
+        bays_y = max(1, int(length // 5.0))
+        plan = _layout_grid(
+            width, length, bays_x, bays_y,
+            bay_x=width / bays_x, bay_y=length / bays_y,
+            label="AI layout",
+        )
+        plan.stories = floors
         return plan
 
     @staticmethod

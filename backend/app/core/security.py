@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
+from fastapi import Header  # noqa: F401  (used as a dependency default below)
 from pydantic import BaseModel
 
 from .config import get_settings
@@ -78,12 +79,12 @@ def decode_access_token(token: str) -> TokenPayload:
     return TokenPayload(**raw)
 
 
-def get_current_user(authorization: Optional[str] = None) -> TokenPayload:
+def get_current_user(authorization: Optional[str] = Header(default=None)) -> TokenPayload:
     """FastAPI-friendly dependency returning the authenticated token claims.
 
-    Reads the ``Authorization: Bearer <token>`` header and raises a 401 when
-    missing, malformed, expired or forged. Sprint 1 will resolve the user row
-    from the DB using ``TokenPayload.uid``.
+    Reads the ``Authorization: Bearer <token>`` header (bound via ``Header`` so
+    ``Depends(get_current_user)`` resolves the request header, not a query
+    parameter) and raises a 401 when missing, malformed, expired or forged.
     """
     from fastapi import HTTPException, status
 

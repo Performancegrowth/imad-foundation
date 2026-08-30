@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getAuditLog, requestSignature, runComplianceCheck } from '../platformApi.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, ErrorState, Spinner } from '../components/ui.jsx'
 
 const STATE = {
@@ -9,7 +10,7 @@ const STATE = {
 }
 
 export default function ReviewWorkspace() {
-  const projectId = 1
+  const projectId = useProjectId()
   const [designId, setDesignId] = useState('res_demo')
   const [checks, setChecks] = useState(null)
   const [audit, setAudit] = useState([])
@@ -35,6 +36,8 @@ export default function ReviewWorkspace() {
   }
 
   const rows = checks?.checks ?? checks?.results ?? []
+
+  if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">

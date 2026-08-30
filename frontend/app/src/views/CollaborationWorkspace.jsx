@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { addComment, createTask, getComments, getTasks, updateTask } from '../platformApi.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
 
 const fmt = (s) => String(s ?? '').replace('T', ' ').slice(0, 16)
@@ -11,7 +12,7 @@ const COLS = [
 const NEXT = { todo: 'in_progress', in_progress: 'done', done: 'done' }
 
 export default function CollaborationWorkspace() {
-  const projectId = 1
+  const projectId = useProjectId()
   const [comments, setComments] = useState([])
   const [tasks, setTasks] = useState([])
   const [text, setText] = useState('')
@@ -43,6 +44,8 @@ export default function CollaborationWorkspace() {
   }
 
   const byCol = (key) => tasks.filter((t) => t.state === key || (key === 'todo' && !t.state))
+
+  if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">

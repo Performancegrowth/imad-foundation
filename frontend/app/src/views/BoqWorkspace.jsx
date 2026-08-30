@@ -1,7 +1,8 @@
 // Sprint 7 — BOQ workspace: generate quantities + BBS, view tables & charts,
 // download branded PDF / Excel exports.
 import { useCallback, useEffect, useState } from 'react'
-import { api, DEFAULT_PROJECT_ID } from '../api.js'
+import { api } from '../api.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { BarChart, EmptyState, StatCard } from '../components/ui.jsx'
 
 const money = (v) => `$${Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
@@ -15,16 +16,19 @@ export default function BoqWorkspace() {
   const [exporting, setExporting] = useState(null)
   const [error, setError] = useState(null)
 
+  const projectId = useProjectId()
+
   useEffect(() => {
-    api.listPlans(DEFAULT_PROJECT_ID).then(setPlans).catch(() => setPlans([]))
-  }, [])
+    if (!projectId) return
+    api.listPlans(projectId).then(setPlans).catch(() => setPlans([]))
+  }, [projectId])
 
   const generate = useCallback(async () => {
     if (!planName) return
     setBusy(true); setError(null)
     try {
       const data = await api.generateBoq({
-        project_id: DEFAULT_PROJECT_ID,
+        project_id: projectId,
         project_name: planName,
         plan_name: planName,
       })
@@ -35,7 +39,7 @@ export default function BoqWorkspace() {
     } finally {
       setBusy(false)
     }
-  }, [planName])
+  }, [planName, projectId])
 
   const doExport = async (kind) => {
     if (!resultId) return
@@ -52,6 +56,8 @@ export default function BoqWorkspace() {
   }
 
   const chartData = boq?.items.map((i) => ({ label: i.code, value: i.amount_usd })) || []
+
+  if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">

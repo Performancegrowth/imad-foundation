@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, DEFAULT_PROJECT_ID } from '../api.js'
+import { api } from '../api.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 
 const EMPTY = {
   soil_bearing_capacity_kpa: '',
@@ -18,10 +19,13 @@ export default function SurveyWorkspace() {
   const [notice, setNotice] = useState(null)
   const [file, setFile] = useState(null)
 
+  const projectId = useProjectId()
+
   const refreshSummary = () => {
-    api.getSurvey(DEFAULT_PROJECT_ID).then(setSummary).catch(() => setSummary(null))
+    if (!projectId) return
+    api.getSurvey(projectId).then(setSummary).catch(() => setSummary(null))
   }
-  useEffect(refreshSummary, [])
+  useEffect(refreshSummary, [projectId])
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
 
@@ -34,7 +38,7 @@ export default function SurveyWorkspace() {
           .filter(([, v]) => v !== '')
           .map(([k, v]) => (k === 'soil_type' ? [k, v] : [k, Number(v)])),
       )
-      await api.saveSurveyManual(DEFAULT_PROJECT_ID, body)
+      await api.saveSurveyManual(projectId, body)
       setNotice('Survey reading recorded.')
       refreshSummary()
     } catch (err) {
@@ -42,13 +46,13 @@ export default function SurveyWorkspace() {
     } finally {
       setBusy(false)
     }
-  }, [form])
+  }, [form, projectId])
 
   const submitFile = useCallback(async () => {
     if (!file) { setError('Choose a geotechnical file first.'); return }
     setBusy(true); setError(null); setNotice(null)
     try {
-      const result = await api.uploadSurvey(DEFAULT_PROJECT_ID, file)
+      const result = await api.uploadSurvey(projectId, file)
       setNotice(`Imported ${file.name}. ${result.message || ''}`)
       setFile(null)
       refreshSummary()
@@ -57,9 +61,11 @@ export default function SurveyWorkspace() {
     } finally {
       setBusy(false)
     }
-  }, [file])
+  }, [file, projectId])
 
   const num = (v) => (v === null || v === undefined || v === '' ? '—' : Number(v).toLocaleString())
+
+  if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">

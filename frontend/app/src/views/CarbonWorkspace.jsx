@@ -1,7 +1,8 @@
 // Sprint 8 — Sustainability dashboard: embodied-carbon breakdown, benchmark
 // banding, green alternatives comparison and LCA report download.
 import { useCallback, useEffect, useState } from 'react'
-import { api, DEFAULT_PROJECT_ID } from '../api.js'
+import { api } from '../api.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { BarChart, EmptyState, StatCard } from '../components/ui.jsx'
 
 const fmt = (v, d = 1) => Number(v ?? 0).toLocaleString(undefined,
@@ -15,21 +16,24 @@ export default function CarbonWorkspace() {
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState(null)
 
+  const projectId = useProjectId()
+
   useEffect(() => {
-    api.listPlans(DEFAULT_PROJECT_ID).then(setPlans).catch(() => setPlans([]))
-  }, [])
+    if (!projectId) return
+    api.listPlans(projectId).then(setPlans).catch(() => setPlans([]))
+  }, [projectId])
 
   const run = useCallback(async () => {
     if (!planName) return
     setBusy(true); setError(null)
     try {
-      setReport(await api.carbonReport({ project_id: DEFAULT_PROJECT_ID, plan_name: planName }))
+      setReport(await api.carbonReport({ project_id: projectId, plan_name: planName }))
     } catch (err) {
       setReport(null); setError(err.message || 'Carbon report failed.')
     } finally {
       setBusy(false)
     }
-  }, [planName])
+  }, [planName, projectId])
 
   const download = async () => {
     if (!report?.lca_pdf) return
@@ -46,6 +50,8 @@ export default function CarbonWorkspace() {
     ? report.carbon.breakdown.slice(0, 8)
         .map((r) => ({ label: r.code, value: r.co2e_kg }))
     : []
+
+  if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">

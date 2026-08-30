@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { getVisualizationData } from '../platformApi.js'
+import { NoProject, useProjectId } from '../useProjectId.jsx'
 
 const GREEN = 0x0A5C36
 const GOLD = 0xC9A227
@@ -14,15 +15,17 @@ export default function Building3DWorkspace() {
   const [error, setError] = useState(null)
   const [mode, setMode] = useState('all')   // all | skeleton | finished
   const [floor, setFloor] = useState('all')
+  const projectId = useProjectId()
 
   useEffect(() => {
+    if (!projectId) return
     let alive = true
-    getVisualizationData(1)
+    getVisualizationData(projectId)
       .then((s) => { if (alive) setScene(s) })
       .catch((e) => { if (alive) setError(e.message) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [])
+  }, [projectId])
 
   const env = scene?.envelope ?? scene ?? {}
   const L = Number(env.length_m ?? 20)
@@ -94,6 +97,8 @@ export default function Building3DWorkspace() {
     }))
     s.roof.visible = mode !== 'skeleton' && (floor === 'all' || String(N - 1) === floor)
   }, [mode, floor, N])
+
+  if (!projectId) return <NoProject />
 
   const floorBtns = ['all', ...Array.from({ length: N }, (_, i) => String(i))]
   return (
