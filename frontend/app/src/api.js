@@ -71,6 +71,9 @@ export const api = {
   savePlan: (projectId, name, plan) =>
     request('/plans/save', { method: 'POST', body: { project_id: projectId, name, plan } }),
   listPlans: (projectId) => request(`/plans/${projectId}`),
+  // Projects — used to resolve/auto-create an owned project before saving plans.
+  listProjects: () => request('/projects'),
+  createProject: (data) => request('/projects', { method: 'POST', body: data }),
 
   // Sprint 4 — Survey
   saveSurveyManual: (projectId, reading) =>

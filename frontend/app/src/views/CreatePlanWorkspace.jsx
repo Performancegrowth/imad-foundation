@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, setActiveProject } from '../api.js'
-import { useProjectId } from '../useProjectId.jsx'
+import { readStoredProject } from '../useProjectId.jsx'
 import PlanViewer from '../components/PlanViewer.jsx'
 
 const TABS = ['questionnaire', 'templates', 'description']
@@ -22,17 +22,60 @@ export default function CreatePlanWorkspace() {
   const [description, setDescription] = useState('')
   const [savedPlans, setSavedPlans] = useState([])
   const [planName, setPlanName] = useState('')
-  const projectId = useProjectId(1)
+  const [projectId, setProjectId] = useState(null)
+  const [resolvingProject, setResolvingProject] = useState(true)
   const navigate = useNavigate()
 
+  // Resolve (or auto-create) a project the current user actually owns.
+  // Previously the workspace defaulted to project 1, which belongs to another
+  // user, so /plans/save rejected it with 404 "Project not found".
   useEffect(() => {
     api.listTemplates().then(setTemplates).catch(() => setTemplates([]))
-    refreshSaved()
+    let cancelled = false
+    const resolveProject = async () => {
+      try {
+        const list = await api.listProjects()
+        if (cancelled) return
+        const ids = (list || []).map((p) => Number(p.id))
+        const stored = readStoredProject()
+        const chosen = ids.length && ids.includes(Number(stored))
+          ? Number(stored)
+          : (ids[0] || null)
+        let pid = chosen
+        if (!pid) {
+          const created = await api.createProject({
+            name: 'My Imad Project',
+            description: 'Auto-created workspace for plan design',
+          })
+          if (cancelled) return
+          pid = Number(created.id)
+        }
+        setProjectId(pid)
+        if (pid) setActiveProject(pid)
+        refreshSaved(pid)
+      } catch (err) {
+        if (cancelled) return
+        const stored = readStoredProject()
+        if (stored) {
+          setProjectId(stored)
+          refreshSaved(stored)
+        } else {
+          setError(err.status === 401
+            ? 'Sign in to create a project and save your design.'
+            : err.message || 'Could not load your projects.')
+        }
+      } finally {
+        if (!cancelled) setResolvingProject(false)
+      }
+    }
+    resolveProject()
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const refreshSaved = () => {
-    api.listPlans(projectId).then(setSavedPlans).catch(() => setSavedPlans([]))
+  const refreshSaved = (pid) => {
+    if (!pid) { setSavedPlans([]); return }
+    api.listPlans(pid).then(setSavedPlans).catch(() => setSavedPlans([]))
   }
 
   const run = async (fn) => {
@@ -54,11 +97,12 @@ export default function CreatePlanWorkspace() {
   const savePlan = async () => {
     if (!plan) return
     if (!planName.trim()) { setError('Give the plan a name before saving.'); return }
+    if (!projectId) { setError('No project available yet — please sign in and try again.'); return }
     setBusy(true); setError(null); setNotice(null)
     try {
       await api.savePlan(projectId, planName.trim(), plan)
       setActiveProject(projectId)
-      setNotice(`Plan "${planName.trim()}" saved — opening Survey…`); refreshSaved()
+      setNotice(`Plan "${planName.trim()}" saved to project #${projectId} — opening Survey…`); refreshSaved(projectId)
       setTimeout(() => navigate(`/project/${projectId}/survey`), 900)
     } catch (err) { setError(err.message || 'Save failed') }
     finally { setBusy(false) }
@@ -69,6 +113,8 @@ export default function CreatePlanWorkspace() {
       <section className="card span-2">
         <h2>Create a Structural Plan</h2>
         <p className="muted">No CAD file? Build a plan from a questionnaire, a ready template, or a plain-language description.</p>
+        {resolvingProject && <div className="alert info" role="status">Checking your projects…</div>}
+        {!resolvingProject && projectId && <p className="muted small">Saving to <strong>project #{projectId}</strong> — saved plans feed Survey, Analysis &amp; BOQ.</p>}
 
         <div className="tabs" role="tablist">
           {TABS.map((t) => (
@@ -222,7 +268,7 @@ export default function CreatePlanWorkspace() {
               onChange={(e) => setPlanName(e.target.value)}
               aria-label="Plan name"
             />
-            <button className="btn" onClick={savePlan} disabled={busy}>Save Plan</button>
+            <button className="btn" onClick={savePlan} disabled={busy || !projectId}>Save Plan</button>
           </div>
         )}
 
