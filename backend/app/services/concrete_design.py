@@ -12,6 +12,9 @@ from typing import Any, Dict, List
 
 from app.models.plan_data import PlanData
 from app.services.structural_engine import MemberForce
+# Unit-safe conversions (Pint-backed; see core/units.py). Makes the implicit
+# kN→N and kN·m→N·mm multipliers explicit and validation-friendly.
+from app.core.units import convert
 
 PHI = 0.90                  # flexure strength reduction factor
 PHI_C = 0.65                # axial compression factor (tied)
@@ -50,7 +53,7 @@ def concrete_design(forces: List[MemberForce], materials: Dict[str, Any]) -> Dic
 def _design_columns(columns: List[MemberForce], fc: float, fy: float) -> List[Dict[str, Any]]:
     checks: List[Dict[str, Any]] = []
     for col in columns:
-        P = max(col.axial_kN * 1000.0, 0.0)   # N
+        P = max(convert(col.axial_kN, "kilonewton", "newton") or 0.0, 0.0)   # N
         size = 0.30                           # m (column side from plan default)
         Ag = size * size * 1e6                # mm²
         # Combined axial + flexure check (simplified per ACI 22.4)
@@ -78,7 +81,7 @@ def _design_columns(columns: List[MemberForce], fc: float, fy: float) -> List[Di
 def _design_beams(beams: List[MemberForce], fc: float, fy: float) -> List[Dict[str, Any]]:
     checks: List[Dict[str, Any]] = []
     for beamf in beams:
-        Mu = max(beamf.moment_kNm, 0.0) * 1e6   # N·mm
+        Mu = max(convert(beamf.moment_kNm, "kilonewton * meter", "newton * millimeter") or 0.0, 0.0)   # N·mm
         b, d_val = 300.0, 0.5 * 1000 - 50.0     # width mm, effective depth mm
         # Solve for As via simplified rectangular stress block
         # Mu = phi * As * fy * (d - a/2),  a = As*fy/(0.85 fc b)
