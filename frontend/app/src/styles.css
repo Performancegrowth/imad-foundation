@@ -58,15 +58,30 @@ body {
 .brand-text span { font-size: 11px; color: var(--secondary); }
 
 nav { display: flex; flex-direction: column; gap: 6px; }
+.sidebar-hint {
+  background: rgba(201, 162, 39, 0.12);
+  border: 1px solid rgba(201, 162, 39, 0.35);
+  color: #F5D97A;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+.sidebar-hint strong { display: block; font-size: 12.5px; margin-bottom: 2px; }
 .nav-item {
   display: flex; align-items: center; gap: 12px;
   background: transparent; border: none; color: #CBD5DC;
   padding: 11px 12px; border-radius: 10px;
   font-size: 14px; font-family: inherit; cursor: pointer; text-align: left;
+  text-decoration: none;
   transition: background 0.15s, color 0.15s;
 }
 .nav-item:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
 .nav-item.active { background: var(--primary); color: #fff; font-weight: 600; }
+.nav-item.locked { color: #8A94A6; }
+.nav-item.locked:hover { background: rgba(255, 255, 255, 0.04); color: #AEB6C2; }
+.nav-lock { margin-left: auto; font-size: 12px; opacity: 0.8; }
 .nav-icon { font-size: 16px; }
 
 .sidebar-footer { margin-top: auto; padding-top: 16px; font-size: 11px; color: #8A94A6; }

@@ -63,18 +63,28 @@ function Sidebar() {
         <div className="brand-text"><strong>Imad</strong><span>Engineering Engine</span></div>
       </div>
       <nav aria-label="Workspace">
+        {pid == null && (
+          <div className="sidebar-hint" role="status">
+            <strong>No active project</strong>
+            <span>Create or select a project to unlock Survey, Analyze, BOQ & more.</span>
+          </div>
+        )}
         {NAV.map((item) => {
-          const to = item.to.replace(':projectId', pid == null ? '' : pid)
-          const disabled = item.scoped && pid == null
-          return disabled ? (
-            <button key={item.id} className="nav-item" disabled
-              title="Create or select a project first" aria-disabled="true">
+          const scopedDisabled = item.scoped && pid == null
+          const to = scopedDisabled
+            ? '/create-plan'
+            : item.to.replace(':projectId', pid == null ? '' : pid)
+          return (
+            <NavLink
+              key={item.id}
+              to={to}
+              title={scopedDisabled ? 'Create or select a project first' : undefined}
+              aria-disabled={scopedDisabled || undefined}
+              className={({ isActive }) =>
+                `nav-item ${isActive ? 'active' : ''} ${scopedDisabled ? 'locked' : ''}`}
+            >
               <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.label}
-            </button>
-          ) : (
-            <NavLink key={item.id} to={to}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.label}
+              {scopedDisabled && <span className="nav-lock" aria-hidden="true">🔒</span>}
             </NavLink>
           )
         })}
@@ -124,7 +134,7 @@ function Shell() {
         <section className="workspace">
           <Routes>
             <Route path="/" element={<Navigate to="/create-plan" replace />} />
-            <Route path="/welcome" element={<LandingWorkspace onNav={pathFor} onAuth={openAuth} />} />
+            <Route path="/welcome" element={<LandingWorkspace onNav={(id) => navigate(pathFor(id))} onAuth={openAuth} />} />
             <Route path="/auth" element={<AuthWorkspace mode={authMode} key={authMode} onDone={handleAuthed} />} />
             <Route path="/create-plan" element={<CreatePlanWorkspace />} />
             <Route path="/cad" element={<CadWorkspace />} />
