@@ -51,8 +51,9 @@ export default function CadWorkspace() {
       <section className="card span-2">
         <h2>CAD &amp; Image Import</h2>
         <p className="muted">
-          Upload a structural DXF, or a scanned sheet (PNG/JPG/PDF) and Imad will
-          extract walls, columns, beams and grid lines.
+          Upload a structural DXF, a BIM model (IFC from Revit/ArchiCAD), or a
+          scanned sheet (PNG/JPG/PDF) and Imad will extract walls, columns,
+          beams, grid lines and rooms — storey by storey.
         </p>
 
         <div className="dropzone">
@@ -99,6 +100,8 @@ export default function CadWorkspace() {
           {status === STATUS_READY && (
             <span className="badge success">
               {plan?.walls?.length} walls · {plan?.columns?.length} columns · {plan?.beams?.length} beams
+              {plan?.rooms?.length > 0 && <> · {plan.rooms.length} rooms</>}
+              {plan?.source === 'ifc' && <> · IFC</>}
             </span>
           )}
         </div>

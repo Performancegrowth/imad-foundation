@@ -7,6 +7,42 @@ export const COLORS = {
   column: '#111827',
   columnFill: '#E8EEF2',
   annotation: '#5B6472',
+  room: 'rgba(127, 179, 213, 0.16)',
+  roomStroke: '#4A78A0',
+  roomLabel: '#41576B',
+}
+
+// Collect the distinct storey levels present in the plan geometry (IFC/BIM
+// plans are multi-storey; every element carries a `level` attribute).
+export function getPlanLevels(plan) {
+  const levels = new Set()
+  ;(plan.walls || []).forEach((w) => levels.add(w.level ?? 0))
+  ;(plan.columns || []).forEach((c) => levels.add(c.level ?? 0))
+  ;(plan.beams || []).forEach((b) => levels.add(b.level ?? 0))
+  return [...levels].sort((a, b) => a - b)
+}
+
+function atLevel(el, level) {
+  if (level === null || level === undefined) return true
+  return (el.level ?? 0) === level
+}
+
+// Area-weighted centroid of a closed polygon (points: [{x, y}, ...]).
+function polygonCentroid(points) {
+  let a = 0
+  let cx = 0
+  let cy = 0
+  for (let i = 0; i < points.length - 1; i++) {
+    const p = points[i]
+    const q = points[i + 1]
+    const cross = p.x * q.y - q.x * p.y
+    a += cross
+    cx += (p.x + q.x) * cross
+    cy += (p.y + q.y) * cross
+  }
+  if (Math.abs(a) < 1e-9) return null
+  a *= 0.5
+  return { x: cx / (6 * a), y: cy / (6 * a) }
 }
 
 export function getPlanBounds(plan) {
@@ -47,7 +83,13 @@ export function fitTransform(bounds, width, height, pad = 40) {
   return { scale, offX, offY }
 }
 
-export function drawPlan(ctx, plan, width, height) {
+export function drawPlan(ctx, plan, width, height, options = {}) {
+  const level = options.level ?? null
+  const walls = (plan.walls || []).filter((w) => atLevel(w, level))
+  const beams = (plan.beams || []).filter((b) => atLevel(b, level))
+  const columns = (plan.columns || []).filter((c) => atLevel(c, level))
+  const rooms = (plan.rooms || []).filter((r) => atLevel(r, level))
+
   ctx.clearRect(0, 0, width, height)
   const bounds = getPlanBounds(plan)
   const { scale, offX, offY } = fitTransform(bounds, width, height)
@@ -76,12 +118,45 @@ export function drawPlan(ctx, plan, width, height) {
   })
   ctx.restore()
 
+  // Rooms — translucent fills + area labels (populated for IFC/BIM plans
+  // by the Shapely room-polygonisation step in the geometry service).
+  if (rooms.length) {
+    ctx.save()
+    rooms.forEach((r) => {
+      const pts = (r.boundary || []).map((p) => ({ x: p.x, y: p.y }))
+      if (pts.length < 3) return
+      ctx.beginPath()
+      pts.forEach((p, idx) => {
+        const X = px(p.x)
+        const Y = py(p.y)
+        if (idx === 0) ctx.moveTo(X, Y)
+        else ctx.lineTo(X, Y)
+      })
+      ctx.closePath()
+      ctx.fillStyle = COLORS.room
+      ctx.fill()
+      ctx.strokeStyle = COLORS.roomStroke
+      ctx.lineWidth = 1
+      ctx.stroke()
+      if (r.area_m2) {
+        const c = polygonCentroid(pts)
+        if (c) {
+          ctx.fillStyle = COLORS.roomLabel
+          ctx.font = '11px Inter, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText(`${r.area_m2.toFixed(1)} m²`, px(c.x), py(c.y))
+        }
+      }
+    })
+    ctx.restore()
+  }
+
   // Beams — gold lines
   ctx.save()
   ctx.strokeStyle = COLORS.beam
   ctx.lineWidth = 5
   ctx.lineCap = 'round'
-  ;(plan.beams || []).forEach((b) => {
+  beams.forEach((b) => {
     ctx.beginPath()
     ctx.moveTo(px(b.x1), py(b.y1))
     ctx.lineTo(px(b.x2), py(b.y2))
@@ -94,7 +169,7 @@ export function drawPlan(ctx, plan, width, height) {
   ctx.strokeStyle = COLORS.wall
   ctx.lineWidth = 8
   ctx.lineCap = 'round'
-  ;(plan.walls || []).forEach((w) => {
+  walls.forEach((w) => {
     ctx.beginPath()
     ctx.moveTo(px(w.x1), py(w.y1))
     ctx.lineTo(px(w.x2), py(w.y2))
@@ -104,7 +179,7 @@ export function drawPlan(ctx, plan, width, height) {
 
   // Columns — filled squares
   ctx.save()
-  ;(plan.columns || []).forEach((c) => {
+  columns.forEach((c) => {
     const r = Math.max((c.size_m || 0.3) * scale * 0.5, 4)
     const x = px(c.cx)
     const y = py(c.cy)
@@ -117,10 +192,13 @@ export function drawPlan(ctx, plan, width, height) {
   ctx.restore()
 
   // Empty-state overlay when nothing meaningful is drawn
-  if (!(plan.walls || []).length && !(plan.columns || []).length && !(plan.beams || []).length) {
+  if (!walls.length && !columns.length && !beams.length) {
     ctx.fillStyle = '#9AA4B0'
     ctx.font = '13px Inter, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('No geometry — run a process or generate a plan', width / 2, height / 2)
+    const msg = level === null
+      ? 'No geometry — run a process or generate a plan'
+      : `No geometry on storey ${level}`
+    ctx.fillText(msg, width / 2, height / 2)
   }
 }

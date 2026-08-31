@@ -194,6 +194,13 @@ textarea { resize: vertical; }
 .swatch.wall { background: var(--primary); }
 .swatch.beam { background: var(--secondary); }
 .swatch.column { background: var(--ink); }
+.swatch.room { background: #7FB3D5; }
+.viewer-toolbar { position: absolute; top: 8px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 2; max-width: calc(100% - 20px); }
+.viewer-toolbar .chip { appearance: none; border: 1px solid var(--line); background: rgba(255,255,255,0.92); color: var(--muted); font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+.viewer-toolbar .chip:hover { border-color: var(--primary); color: var(--primary-dark); }
+.viewer-toolbar .chip.active { background: var(--primary-soft); border-color: #BFE0CF; color: var(--primary-dark); }
+.viewer-toolbar .chip-static { cursor: default; background: var(--secondary-soft); border-color: #EAD9A0; color: #7A5A00; }
+.legend-stat { font-weight: 600; color: var(--primary-dark); }
 
 .viewer-3d { background: var(--canvas); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
 
