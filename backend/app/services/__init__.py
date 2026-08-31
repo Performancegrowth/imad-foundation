@@ -42,6 +42,12 @@ from .geometry_utils import (
     merge_collinear_walls,
     validation_warnings,
 )
+from .section_designer import (
+    MATERIALS as SECTION_MATERIALS,
+    SUPPORTED_SHAPES as SECTION_SHAPES,
+    SectionDesigner,
+    SectionDesignError,
+)
 from .visualization_service import VisualizationService, ViewportMesh
 
 __all__ = [
@@ -77,6 +83,10 @@ __all__ = [
     "floor_envelope",
     "merge_collinear_walls",
     "validation_warnings",
+    "SECTION_MATERIALS",
+    "SECTION_SHAPES",
+    "SectionDesigner",
+    "SectionDesignError",
     "VisualizationService",
     "ViewportMesh",
 ]

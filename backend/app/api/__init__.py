@@ -8,7 +8,7 @@ from . import (
     auth, projects, upload, survey, plans,
     visualization, cad, analysis, generative, boq, sustainability,
     platform, agents, billing, governance, validation, collaboration,
-    ecosystem, jobs,
+    ecosystem, jobs, sections,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -37,5 +37,7 @@ api_router.include_router(collaboration.router, tags=["collaboration"])
 api_router.include_router(ecosystem.router, tags=["ecosystem"])
 # Sprint 14 — background job queue
 api_router.include_router(jobs.router, tags=["jobs"])
+# Sprint 7 — section designer
+api_router.include_router(sections.router, tags=["sections"])
 
 __all__ = ["api_router"]

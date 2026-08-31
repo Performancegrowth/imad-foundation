@@ -35,6 +35,11 @@ Pillow>=10.0
 img2pdf>=0.5
 shapely>=2.0          # 2D geometry processing (services/geometry_utils.py)
 
+# ── Section analysis (Sprint 7) ───────────────────────────────────
+# Optional: pip install sectionproperties (pulls scipy + meshing deps).
+# The section designer falls back to exact closed-form formulas without it.
+# sectionproperties>=3.1
+
 # ── BIM / IFC import (Sprint 5) ───────────────────────────────────
 # Optional: ifcopenshell ships heavy native wheels via its own index
 #   `pip install ifcopenshell`. The CAD pipeline degrades gracefully
