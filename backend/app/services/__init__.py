@@ -3,6 +3,7 @@ from .cad_processor import (
     CADProcessor,
     EzdxfCADProcessor,
     ImageCADProcessor,
+    IfcCADProcessor,
     get_cad_processor,
     CADProcessingError,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "CADProcessor",
     "EzdxfCADProcessor",
     "ImageCADProcessor",
+    "IfcCADProcessor",
     "get_cad_processor",
     "CADProcessingError",
     "AIProvider",

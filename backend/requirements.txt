@@ -34,6 +34,12 @@ pandas>=2.0
 Pillow>=10.0
 img2pdf>=0.5
 
+# ── BIM / IFC import (Sprint 5) ───────────────────────────────────
+# Optional: ifcopenshell ships heavy native wheels via its own index
+#   `pip install ifcopenshell`. The CAD pipeline degrades gracefully
+# (and tests inject a fake module), so the core install stays lean.
+# ifcopenshell>=0.7
+
 # ── Survey (Sprint 4) ──────────────────────────────────────────────
 pdfplumber>=0.11
 geopandas>=0.14
