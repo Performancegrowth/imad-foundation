@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Iterable, List, Tuple
 
 from app.models.plan_data import GridLine, PlanData, Wall, Beam, Column, ImageInput
+from app.services.geometry_utils import enrich_plan
 
 log = logging.getLogger("imad.cad")
 
@@ -125,6 +126,7 @@ class EzdxfCADProcessor(CADProcessor):
         plan.columns = [_make_column(self, c) for c in column_centers]
         plan.grids = _grid_from_extents(plan)
         plan.materials = {"concrete": "C30", "steel": "A615 Gr60"}
+        enrich_plan(plan)
         return plan
 
 
@@ -302,6 +304,7 @@ class IfcCADProcessor(CADProcessor):
 
         plan.grids = _grid_from_extents(plan)
         plan.materials = {"concrete": "C30", "steel": "A615 Gr60"}
+        enrich_plan(plan)
         return plan
 
 
@@ -354,6 +357,7 @@ class ImageCADProcessor(CADProcessor):
         # 3. Grids: derive from column grid coordinates.
         plan.grids = _grid_from_extents(plan)
         plan.materials = {"concrete": "C30", "steel": "A615 Gr60"}
+        enrich_plan(plan)
         return plan
 
     # -- helpers -----------------------------------------------------

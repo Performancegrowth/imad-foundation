@@ -34,6 +34,14 @@ from .structural_engine import (
     MemberForce,
 )
 from .concrete_design import concrete_design, preliminary_boq
+from .geometry_utils import (
+    SHAPELY_AVAILABLE,
+    derive_rooms,
+    enrich_plan,
+    floor_envelope,
+    merge_collinear_walls,
+    validation_warnings,
+)
 from .visualization_service import VisualizationService, ViewportMesh
 
 __all__ = [
@@ -63,6 +71,12 @@ __all__ = [
     "MemberForce",
     "concrete_design",
     "preliminary_boq",
+    "SHAPELY_AVAILABLE",
+    "derive_rooms",
+    "enrich_plan",
+    "floor_envelope",
+    "merge_collinear_walls",
+    "validation_warnings",
     "VisualizationService",
     "ViewportMesh",
 ]

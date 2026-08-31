@@ -225,8 +225,11 @@ class OpenSeesEngine(StructuralEngine):
 
     @staticmethod
     def _plan_area(plan: PlanData) -> float:
-        b = plan.bounds()
-        return max((b["max_x"] - b["min_x"]), 1.0) * max((b["max_y"] - b["min_y"]), 1.0)
+        """Usable floor area — exact when Shapely can polygonise rooms."""
+        from app.services.geometry_utils import floor_envelope
+
+        envelope = floor_envelope(plan)
+        return float(envelope["area_m2"])
 
     @staticmethod
     def _tributary_width(plan: PlanData, beam) -> float:

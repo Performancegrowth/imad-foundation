@@ -57,8 +57,9 @@ def _footing_design(plan: PlanData, survey: Optional[SurveyReading]) -> Dict[str
     stories = max(1, plan.stories)
     floor_load_kpa = 25.0 * 0.15 + 1.5 + 2.5          # self-weight + SDL + live
     n_cols = max(1, len(plan.columns))
-    b = plan.bounds()
-    area = max((b["max_x"] - b["min_x"]), 1.0) * max((b["max_y"] - b["min_y"]), 1.0)
+    from app.services.geometry_utils import floor_envelope
+
+    area = float(floor_envelope(plan)["area_m2"])
     axial_per_col_kn = floor_load_kpa * area / n_cols * stories
     footing_area_m2 = axial_per_col_kn / q_allow_kpa
     side = round(math.sqrt(max(footing_area_m2, 0.25)), 2)
@@ -76,8 +77,9 @@ def compute_quantities(plan: PlanData,
                        survey: Optional[SurveyReading] = None) -> List[Dict[str, Any]]:
     """Return priced BOQ line items for every trade."""
     stories = max(1, plan.stories)
-    b = plan.bounds()
-    footprint = max((b["max_x"] - b["min_x"]), 1.0) * max((b["max_y"] - b["min_y"]), 1.0)
+    from app.services.geometry_utils import floor_envelope
+
+    footprint = float(floor_envelope(plan)["area_m2"])
 
     footing = _footing_design(plan, survey)
     n_ftg = max(footing["count"], 1)

@@ -33,6 +33,7 @@ numpy>=1.26
 pandas>=2.0
 Pillow>=10.0
 img2pdf>=0.5
+shapely>=2.0          # 2D geometry processing (services/geometry_utils.py)
 
 # ── BIM / IFC import (Sprint 5) ───────────────────────────────────
 # Optional: ifcopenshell ships heavy native wheels via its own index
