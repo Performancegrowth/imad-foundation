@@ -26,6 +26,7 @@ class GenerateBOQRequest(BaseModel):
     plan: Optional[Dict[str, Any]] = None            # inline PlanData dict
     plan_name: Optional[str] = None                  # or a saved plan name
     survey: Optional[Dict[str, Any]] = None          # SurveyReading dict
+    analysis: Optional[Dict[str, Any]] = None        # AnalysisResult (from Sprint 5) — NEW
     options: Optional[Dict[str, Any]] = None         # opt-in async via options.async
 
 
@@ -47,7 +48,11 @@ def _resolve_plan(payload: GenerateBOQRequest) -> PlanData:
 async def generate(payload: GenerateBOQRequest) -> Dict[str, Any]:
     """Run synchronously by default so callers get the full BOQ payload (same
     contract as /analyze). Background execution (Redis + worker) is an explicit
-    opt-in via ``options: {"async": true}`` — the response then carries a job_id."""
+    opt-in via ``options: {"async": true}`` — the response then carries a job_id.
+    
+    When analysis is provided (AnalysisResult from /analyze), BOQ uses member forces
+    to size reinforcement accurately. Without it, uses heuristic (1% steel ratio).
+    """
     data = payload.model_dump()
     if (payload.options or {}).get("async"):
         return {"job_id": jobs.enqueue_job("boq", data)}
@@ -61,8 +66,15 @@ def run_boq(data: Dict[str, Any]) -> Dict[str, Any]:
     request = GenerateBOQRequest(**data)
     plan = _resolve_plan(request)
     survey = SurveyReading(**request.survey) if request.survey else None
+    
+    # NEW: Pass analysis to BOQ generator for accurate sizing
     try:
-        boq = generate_boq(plan, survey, project_name=request.project_name)
+        boq = generate_boq(
+            plan, 
+            survey, 
+            analysis=request.analysis,  # ← AnalysisResult from Sprint 5
+            project_name=request.project_name
+        )
     except BOQError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
