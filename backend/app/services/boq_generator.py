@@ -51,9 +51,18 @@ class BOQError(Exception):
 
 
 # ───────────────────────────────────────────────────── quantity take-off ────
-def _footing_design(plan: PlanData, survey: Optional[SurveyReading]) -> Dict[str, Any]:
-    """Size isolated footings from allowable bearing capacity (survey-driven)."""
-    q_allow_kpa = float(getattr(survey, "soil_bearing_kpa", 0) or 0) or 150.0
+def footing_design(plan: PlanData, survey: Optional[SurveyReading]) -> Dict[str, Any]:
+    """Size isolated footings from allowable bearing capacity (survey-driven).
+
+    Reads the survey's ``soil_bearing_capacity_kpa`` (the SurveyReading /
+    SurveySummary field name) and falls back to a conservative 150 kPa
+    assumption when no survey exists — flagged via ``assumed: true`` so the
+    UI can tell the builder their numbers are provisional.
+    """
+    q_allow = getattr(survey, "soil_bearing_capacity_kpa", None) if survey else None
+    assumed = q_allow is None
+    q_allow_kpa = float(q_allow or 0.0) or 150.0
+    gw = getattr(survey, "groundwater_depth_m", None) if survey else None
     stories = max(1, plan.stories)
     floor_load_kpa = 25.0 * 0.15 + 1.5 + 2.5          # self-weight + SDL + live
     n_cols = max(1, len(plan.columns))
@@ -64,8 +73,12 @@ def _footing_design(plan: PlanData, survey: Optional[SurveyReading]) -> Dict[str
     footing_area_m2 = axial_per_col_kn / q_allow_kpa
     side = round(math.sqrt(max(footing_area_m2, 0.25)), 2)
     depth = round(min(max(side / 3.2, 0.35), 0.9), 2)   # two-way shear heuristic
+    if gw is not None and float(gw) < 2.5:
+        depth = round(min(depth + 0.15, 1.2), 2)        # shallow water table
     return {
         "q_allow_kpa": q_allow_kpa,
+        "assumed": assumed,
+        "groundwater_depth_m": gw,
         "axial_per_col_kn": round(axial_per_col_kn, 1),
         "side_m": side,
         "depth_m": depth,
@@ -81,7 +94,7 @@ def compute_quantities(plan: PlanData,
 
     footprint = float(floor_envelope(plan)["area_m2"])
 
-    footing = _footing_design(plan, survey)
+    footing = footing_design(plan, survey)
     n_ftg = max(footing["count"], 1)
     ftg_vol = n_ftg * footing["side_m"] ** 2 * footing["depth_m"]
 
@@ -196,7 +209,7 @@ def generate_bbs(plan: PlanData) -> List[Dict[str, Any]]:
 
     footing_side = 1.4                                  # conservative default
     try:
-        footing_side = _footing_design(plan, None)["side_m"]
+        footing_side = footing_design(plan, None)["side_m"]
     except Exception:  # pragma: no cover
         pass
     per_direction = max(3, int(footing_side / 0.2))
@@ -289,7 +302,7 @@ def generate_boq(plan: PlanData, survey: Optional[SurveyReading] = None,
         },
         "bbs": {"bars": bars, **cutting,
                 "rebar_total_kg": round(sum(bar["weight_kg"] for bar in bars), 1)},
-        "footing": _footing_design(plan, survey),
+        "footing": footing_design(plan, survey),
         "envelope": {
             "length_m": round(b["max_x"] - b["min_x"], 2),
             "width_m": round(b["max_y"] - b["min_y"], 2),

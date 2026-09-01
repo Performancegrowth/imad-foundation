@@ -59,6 +59,30 @@ def default_storage_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "storage" / "survey"
 
 
+def load_survey_reading(project_id: int,
+                        storage_dir: Optional[str] = None) -> Optional[SurveyReading]:
+    """Latest recorded survey reading for a project, or ``None``.
+
+    Used by the analysis / BOQ pipelines to auto-include the site data the
+    builder recorded in the Survey workspace — so the geotechnical inputs
+    silently flow into foundation sizing without any extra UI steps.
+    """
+    try:
+        processor = ManualSurveyProcessor(storage_dir)
+        summary = processor.load_summary(project_id)
+    except Exception:  # pragma: no cover - corrupt storage must not 500
+        log.warning("Could not load survey for project %s", project_id)
+        return None
+    if not summary.entries:
+        return None
+    return SurveyReading(
+        soil_bearing_capacity_kpa=summary.soil_bearing_capacity_kpa,
+        groundwater_depth_m=summary.groundwater_depth_m,
+        terrain_slope_deg=summary.terrain_slope_deg,
+        soil_type=getattr(summary, "soil_type", None),
+    )
+
+
 # ───────────────────────────────────────────────────────── manual ────────────
 class ManualSurveyProcessor(SurveyProcessor):
     """Validate and persist hand-entered geotechnical data."""

@@ -43,6 +43,19 @@ def _resolve_plan(payload: GenerateBOQRequest) -> PlanData:
     raise HTTPException(status_code=422, detail="Provide 'plan' or 'plan_name'.")
 
 
+def _resolve_survey(payload: GenerateBOQRequest) -> Optional[SurveyReading]:
+    """Explicit survey dict wins; otherwise auto-include the project's
+    recorded site survey so footing sizing and earthworks use real data."""
+    if payload.survey:
+        try:
+            return SurveyReading(**payload.survey)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid survey: {exc}") from exc
+    from app.services.survey_processor import load_survey_reading
+
+    return load_survey_reading(payload.project_id) if payload.project_id else None
+
+
 @router.post("/generate-boq", summary="Generate a detailed BOQ + BBS")
 async def generate(payload: GenerateBOQRequest) -> Dict[str, Any]:
     """Run synchronously by default so callers get the full BOQ payload (same
@@ -60,7 +73,7 @@ def run_boq(data: Dict[str, Any]) -> Dict[str, Any]:
 
     request = GenerateBOQRequest(**data)
     plan = _resolve_plan(request)
-    survey = SurveyReading(**request.survey) if request.survey else None
+    survey = _resolve_survey(request)
     try:
         boq = generate_boq(plan, survey, project_name=request.project_name)
     except BOQError as exc:

@@ -58,7 +58,7 @@ def run_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a structural analysis job. Worker-safe (no HTTP context)."""
     request = AnalyzeRequest(**data)
     plan = _resolve_plan(request)
-    survey = SurveyReading(**request.survey) if request.survey else None
+    survey = _resolve_survey(request)
 
     try:
         result = _engine.analyze(plan, survey, request.options or {})
@@ -116,3 +116,16 @@ def _resolve_plan(payload: AnalyzeRequest) -> PlanData:
         except PlanGenerationError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     raise HTTPException(status_code=422, detail="Provide 'plan' or 'plan_name'.")
+
+
+def _resolve_survey(payload: AnalyzeRequest) -> Optional[SurveyReading]:
+    """Explicit survey dict wins; otherwise auto-include the project's
+    recorded site survey so geotechnical data drives foundation sizing."""
+    if payload.survey:
+        try:
+            return SurveyReading(**payload.survey)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid survey: {exc}") from exc
+    from app.services.survey_processor import load_survey_reading
+
+    return load_survey_reading(payload.project_id) if payload.project_id else None
