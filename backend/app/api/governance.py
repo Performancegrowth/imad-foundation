@@ -3,6 +3,7 @@ and the immutable audit trail viewer."""
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -92,17 +93,30 @@ async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
 
     analysis = payload.analysis
     if analysis is None and payload.analysis_result_id:
-        analysis = load_result(payload.analysis_result_id)
-        if not analysis:
+        stored = load_result(payload.analysis_result_id)
+        if not stored:
             raise HTTPException(
                 status_code=404,
                 detail=f"Analysis result '{payload.analysis_result_id}' not found.",
             )
+        # Storage wraps results in an envelope ({id, status, payload, ...});
+        # the report needs the inner payload, not the envelope.
+        analysis = stored.get("payload") if isinstance(stored, dict) else stored
+
     if analysis is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Provide 'analysis' or 'analysis_result_id'.",
-        )
+        # Homebuilder flow: no analysis supplied — run the authoritative
+        # engine here (stores an auditable per-project result, exactly like
+        # POST /analysis/analyze) instead of demanding analysis input.
+        from app.api.analysis import run_analysis
+
+        analysis_data: Dict[str, Any] = {"project_id": payload.project_id}
+        if payload.plan_name:
+            analysis_data["plan_name"] = payload.plan_name
+        if payload.plan is not None:
+            analysis_data["plan"] = payload.plan
+        if payload.survey is not None:
+            analysis_data["survey"] = payload.survey
+        analysis = run_analysis(analysis_data)
 
     survey = payload.survey
     if survey is None and payload.project_id:
@@ -164,6 +178,116 @@ async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
     audit.log_action("sbc304_package_generated", project_id=payload.project_id,
                      details={"package_id": record["id"], "path": path})
     return record
+
+
+@router.get("/compliance/sbc304-readiness/{project_id}",
+            summary="Submission-readiness checklist for the SBC 304 package")
+async def sbc304_readiness(project_id: int) -> Dict[str, Any]:
+    """Report what exists for this project versus what the SBC 304
+    submission path needs.
+
+    Read-only and data-driven: every item reflects an actual stored
+    artifact (saved plan, recorded survey, compliance run, generated
+    package, professional sign-off). Nothing is generated here and no
+    status is guessed.
+    """
+    from pathlib import Path
+
+    def _latest(coll, predicate):
+        try:
+            records = [r for r in coll.list() if predicate(r)]
+        except Exception:
+            return None
+        if not records:
+            return None
+        return max(records, key=lambda r: str(r.get("created_at", "")))
+
+    saved_plans: list = []
+    try:
+        saved_plans = list(PlanGenerator.list_plans(project_id) or [])
+    except Exception:
+        saved_plans = []
+    plan_names = [
+        str(p.get("name") if isinstance(p, dict) else getattr(p, "name", ""))
+        for p in saved_plans
+        if (p.get("name") if isinstance(p, dict) else getattr(p, "name", None))
+    ]
+
+    survey = load_survey_reading(project_id)
+
+    latest_check = _latest(
+        _checks, lambda r: r.get("project_id") == project_id)
+    latest_pkg = _latest(
+        _submissions,
+        lambda r: r.get("project_id") == project_id
+        and str(r.get("package_type", "")).startswith("sbc304"),
+    )
+
+    pkg_file = (latest_pkg or {}).get("file_path")
+    pkg_exists = bool(pkg_file) and Path(pkg_file).exists()
+
+    check_summary = (latest_check or {}).get("report", {}).get("summary", {}) \
+        if latest_check else {}
+    failed_count = check_summary.get("failed", 0) or 0
+    latest_signature = _latest(
+        _signatures, lambda r: r.get("project_id") == project_id)
+
+    checklist = [
+        {
+            "item": "Site plan (saved)",
+            "ready": bool(plan_names),
+            "detail": plan_names[0] if plan_names
+            else "No saved plan for this project.",
+        },
+        {
+            "item": "Site survey (geotechnical)",
+            "ready": survey is not None,
+            "detail": "Recorded survey available"
+            if survey is not None else "No recorded survey for this project.",
+        },
+        {
+            "item": "Code compliance run",
+            "ready": latest_check is not None,
+            "detail": (
+                f"Last run: {check_summary.get('passed', 0)} passed / "
+                f"{check_summary.get('warned', 0)} warned / "
+                f"{failed_count} failed"
+            ) if latest_check else "No compliance check recorded yet.",
+        },
+        {
+            "item": "No failing code checks",
+            "ready": latest_check is not None and failed_count == 0,
+            "detail": "PASS (compliance engine)" if latest_check and failed_count == 0
+            else f"{failed_count} failing checks" if latest_check
+            else "Blocked until a compliance run exists.",
+        },
+        {
+            "item": "SBC 304 calculation package (PDF)",
+            "ready": pkg_exists,
+            "detail": pkg_file if pkg_exists
+            else "Not generated yet — POST /compliance/sbc304-package.",
+        },
+        {
+            "item": "Professional engineer sign-off",
+            "ready": bool((latest_pkg or {}).get("signed_by"))
+            or (latest_signature or {}).get("status") == "signed",
+            "detail": "Pending professional engineer review"
+            if not ((latest_pkg or {}).get("signed_by")
+                    or (latest_signature or {}).get("status") == "signed")
+            else "Signed record on file.",
+        },
+    ]
+
+    ready = all(item["ready"] for item in checklist)
+    audit.log_action("sbc304_readiness_viewed", project_id=project_id,
+                     details={"ready": ready})
+    return {
+        "project_id": project_id,
+        "ready": ready,
+        "status": "READY FOR ENGINEER REVIEW" if ready
+        else "PENDING — items outstanding",
+        "checks": checklist,
+    }
 
 
 @router.post("/signature/request", summary="Approve & sign — request engineer signature")

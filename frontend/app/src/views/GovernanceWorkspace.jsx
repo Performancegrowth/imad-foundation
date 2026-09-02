@@ -1,22 +1,31 @@
 import { useCallback, useEffect, useState } from 'react'
-import { generateSubmissionPackage, getAuditLog, getComplianceReport, getSubmissionPackage } from '../platformApi.js'
+import { downloadExport, generateSBC304Package, getAuditLog, getComplianceReport, getSubmissionPackage, getSubmissionReadiness } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
 
 export default function GovernanceWorkspace() {
   const projectId = useProjectId()
-  const [designId] = useState('res_demo')
   const [report, setReport] = useState(null)
   const [pkg, setPkg] = useState([])
   const [audit, setAudit] = useState([])
+  const [readiness, setReadiness] = useState(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true)
-    Promise.all([getSubmissionPackage(projectId), getAuditLog(projectId)])
-      .then(([p, a]) => { setPkg(Array.isArray(p) ? p : p?.packages ?? []); setAudit(Array.isArray(a) ? a : a?.entries ?? a?.log ?? []); setErr(null) })
+    Promise.all([
+      getSubmissionPackage(projectId),
+      getAuditLog(projectId),
+      getSubmissionReadiness(projectId).catch(() => null),
+    ])
+      .then(([p, a, r]) => {
+        setPkg(Array.isArray(p) ? p : p?.packages ?? [])
+        setAudit(Array.isArray(a) ? a : a?.entries ?? a?.log ?? [])
+        setReadiness(r)
+        setErr(null)
+      })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false))
   }, [projectId])
@@ -24,11 +33,11 @@ export default function GovernanceWorkspace() {
 
   const check = async () => {
     setBusy(true); setErr(null)
-    try { setReport(await getComplianceReport(designId)) } catch (e) { setErr(e.message) } finally { setBusy(false) }
+    try { setReport(await getComplianceReport({ project_id: projectId })) } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
   const gen = async () => {
     setBusy(true); setErr(null)
-    try { await generateSubmissionPackage(designId); load() } catch (e) { setErr(e.message) } finally { setBusy(false) }
+    try { await generateSBC304Package({ project_id: projectId }); load() } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
 
   const rows = report?.checks ?? report?.results ?? []
@@ -61,19 +70,43 @@ export default function GovernanceWorkspace() {
       </section>
 
       <section className="card">
-        <h3>Submission Package</h3>
-        <p className="muted small">Combines calculation note, drawings, compliance report and project info into one municipality-ready PDF.</p>
-        <button className="btn primary" onClick={gen} disabled={busy}>{busy ? 'Assembling…' : 'Generate Municipality Submission Package'}</button>
+        <h3>Submission Readiness</h3>
+        {loading || !readiness ? <Spinner label="Checking…" />
+          : (
+            <>
+              <span className={`badge ${readiness.ready ? 'success' : 'warn'}`}>{readiness.status}</span>
+              <ul className="saved-list" style={{ marginTop: 12 }}>
+                {readiness.checks.map((c) => (
+                  <li key={c.item}>
+                    <span>{c.ready ? '✓' : '✗'} {c.item}</span>
+                    <span className={`badge ${c.ready ? 'success' : 'warn'} small`}>{c.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+      </section>
+
+      <section className="card">
+        <h3>SBC 304 Calculation Package</h3>
+        <p className="muted small">Runs the analysis + compliance engines, assembles the preliminary calculation package (PDF) and records it for licensed-engineer review.</p>
+        <button className="btn primary" onClick={gen} disabled={busy}>{busy ? 'Assembling…' : 'Generate SBC 304 Package'}</button>
         {loading ? <Spinner label="Loading…" /> : pkg.length === 0
-          ? <EmptyState icon="📦" title="No packages yet" hint="Generate the first submission package." />
+          ? <EmptyState icon="📦" title="No packages yet" hint="Generate the first calculation package." />
           : (
             <ul className="saved-list">
-              {pkg.map((p) => (
-                <li key={p.id}>
-                  <span>{p.file_path ?? p.file}</span>
-                  <span className="badge success">{p.signed_by ? `Signed · ${p.signed_by}` : 'Pending'}</span>
-                </li>
-              ))}
+              {pkg.map((p) => {
+                const file = p.file_path ?? p.file
+                return (
+                  <li key={p.id}>
+                    <span>{file ? String(file).split(/[\\/]/).pop() : p.id}</span>
+                    <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span className="badge success">{p.signed_by ? `Signed · ${p.signed_by}` : 'Pending review'}</span>
+                      {file && <button className="btn" onClick={() => downloadExport(file)}>Download</button>}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           )}
       </section>

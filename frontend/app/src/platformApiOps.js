@@ -19,11 +19,30 @@ export const getAuditLog = (projectId) => get(`/audit-log/${projectId}`)
 export const getVisualizationData = (designId) => post('/viz/building/scene', { design_id: designId })
 
 // ─── Governance & review (Sprint 10) ───────────────────────────────────────
-export const runComplianceCheck = (designId) => post('/compliance/check', { design_id: designId })
-export const getComplianceReport = (designId) => post('/compliance/check', { design_id: designId })
+// Compliance/package endpoints resolve plan+analysis server-side from the
+// project; callers pass { project_id } (optionally plan/plan_name/analysis).
+export const runComplianceCheck = (payload) => post('/compliance/check', payload)
+export const getComplianceReport = (payload) => post('/compliance/check', payload)
+export const generateSBC304Package = (payload) => post('/compliance/sbc304-package', payload)
+export const getSubmissionReadiness = (projectId) => get(`/compliance/sbc304-readiness/${projectId}`)
 export const requestSignature = (payload) => post('/signature/request', payload)
 export const getSubmissionPackage = (projectId) => get(`/submission/${projectId}`)
-export const generateSubmissionPackage = (designId) => post('/submission/generate', { design_id: designId })
+export const generateSubmissionPackage = (payload) => post('/submission/generate', payload)
+
+// Download an exports-dir file (PDF etc.) served by GET /exports/download.
+export const downloadExport = async (path, filename) => {
+  const res = await fetch(`${BASE_URL}/exports/download?path=${encodeURIComponent(path)}`)
+  if (!res.ok) throw new Error(`Download failed (${res.status})`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || String(path).split(/[\\/]/).pop() || 'imad-export.pdf'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 
 // ─── Collaboration & BIM (Sprint 12) ───────────────────────────────────────
 export const getComments = (projectId) => get(`/comments?project_id=${projectId}`)

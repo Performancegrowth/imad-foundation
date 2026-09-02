@@ -27,7 +27,7 @@ export default function ReviewWorkspace() {
 
   const run = async () => {
     setBusy(true); setError(null)
-    try { setChecks(await runComplianceCheck(designId)) } catch (e) { setError(e.message) } finally { setBusy(false) }
+    try { setChecks(await runComplianceCheck({ project_id: projectId })) } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
   const sign = async () => {
     setBusy(true); setError(null)

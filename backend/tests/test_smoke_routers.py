@@ -118,3 +118,29 @@ def test_platform_analytics_not_500(client):
     # The platform router itself: tutorials catalogue.
     res2 = client.get("/api/v1/tutorials")
     assert res2.status_code < 500
+
+
+def test_governance_sbc304_package_auto_analysis(client):
+    """Homebuilder flow: no analysis supplied — the endpoint runs the
+    authoritative engine itself and still produces the package PDF."""
+    res = client.post("/api/v1/compliance/sbc304-package", json={
+        "project_id": 1,
+        "project_name": "Auto Analysis Package",
+        "plan": _SMOKE_PLAN,
+    })
+    assert res.status_code < 500
+    if res.status_code == 200:
+        body = res.json()
+        assert body.get("file_path")
+        assert "sbc304_calculation_package" in body.get("contents", [])
+
+
+def test_governance_readiness_checklist(client):
+    """Readiness endpoint reports a data-driven checklist, never 500."""
+    res = client.get("/api/v1/compliance/sbc304-readiness/1")
+    assert res.status_code < 500
+    if res.status_code == 200:
+        body = res.json()
+        assert isinstance(body.get("checks"), list) and body["checks"]
+        assert isinstance(body.get("ready"), bool)
+        assert body.get("status")
