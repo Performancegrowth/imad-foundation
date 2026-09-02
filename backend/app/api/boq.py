@@ -26,6 +26,7 @@ class GenerateBOQRequest(BaseModel):
     plan: Optional[Dict[str, Any]] = None            # inline PlanData dict
     plan_name: Optional[str] = None                  # or a saved plan name
     survey: Optional[Dict[str, Any]] = None          # SurveyReading dict
+    analysis: Optional[Dict[str, Any]] = None        # AnalysisResult from /analyze (refines rebar)
     options: Optional[Dict[str, Any]] = None         # opt-in async via options.async
 
 
@@ -75,7 +76,8 @@ def run_boq(data: Dict[str, Any]) -> Dict[str, Any]:
     plan = _resolve_plan(request)
     survey = _resolve_survey(request)
     try:
-        boq = generate_boq(plan, survey, project_name=request.project_name)
+        boq = generate_boq(plan, survey, analysis=request.analysis,
+                           project_name=request.project_name)
     except BOQError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:

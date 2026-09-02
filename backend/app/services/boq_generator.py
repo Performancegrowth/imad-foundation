@@ -276,8 +276,14 @@ ASSUMPTIONS = [
 
 
 def generate_boq(plan: PlanData, survey: Optional[SurveyReading] = None,
+                 analysis: Optional[Dict[str, Any]] = None,
                  project_name: str = "Imad Project") -> Dict[str, Any]:
-    """Full BOQ payload consumed by the API, exports and the carbon module."""
+    """Full BOQ payload consumed by the API, exports and the carbon module.
+
+    When an ``analysis`` payload (from /analyze) is supplied, the rebar take-off
+    is refined with the design utilization so reinforcement reflects the actual
+    member forces instead of a flat steel ratio.
+    """
     if not bool(plan):
         raise BOQError("Plan contains no structural elements; nothing to price.")
 
@@ -285,9 +291,32 @@ def generate_boq(plan: PlanData, survey: Optional[SurveyReading] = None,
     bars = generate_bbs(plan)
     cutting = optimize_cutting(bars)
 
+    # Analysis refinement: scale rebar with the governing utilization when the
+    # frame was analysed (utilization near 1.00 → ratio estimate is consistent;
+    # significantly under-loaded → allow a modest saving within practical limits).
+    util = 0.0
+    if analysis:
+        try:
+            util = float((analysis.get("design") or {}).get("max_utilization") or 0.0)
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            util = 0.0
+    if 0.0 < util < 1.0:
+        ratio = max(0.85, min(1.0, util / 0.90))          # 90% utilization target
+        items = [
+            {**i, "quantity": round(i["quantity"] * ratio, 2),
+             "amount_usd": round(i["amount_usd"] * ratio, 2)} if i["code"] == "REBAR" else i
+            for i in items
+        ]
+
     total = round(sum(i["amount_usd"] for i in items), 2)
     gfa_m2 = next((i["quantity"] for i in items if i["code"] == "FORM-SLAB"), 0.0)
     rebar_kg = next((i["quantity"] for i in items if i["code"] == "REBAR"), 0.0)
+
+    assumptions = list(ASSUMPTIONS)
+    if analysis:
+        assumptions.append(
+            f"Rebar refined from analysis utilization {util:.2f} "
+            "(target 0.90; welded detail + BBS mark-up unchanged).")
 
     b = plan.bounds()
     return {
@@ -309,7 +338,7 @@ def generate_boq(plan: PlanData, survey: Optional[SurveyReading] = None,
             "stories": plan.stories,
             "slab_type": str((plan.materials or {}).get("slab", "flat")),
         },
-        "assumptions": ASSUMPTIONS,
+        "assumptions": assumptions,
         "status": "completed",
     }
 
