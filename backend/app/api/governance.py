@@ -52,6 +52,15 @@ class SignatureCompleteBody(BaseModel):
     notes: str = ""
 
 
+class SubmissionStatusBody(BaseModel):
+    """A municipality-side tracking event for a submission package."""
+    status: str = Field(pattern="^(generated|submitted|under_review|"
+                                "approved|revision_required|rejected|signed)$")
+    notes: str = ""
+    authority: str = ""
+    reference_number: str = ""
+
+
 @router.post("/compliance/check", summary="Run SBC 304 code-compliance checks")
 async def compliance_check(payload: ComplianceRequest) -> Dict[str, Any]:
     plan = _resolve_plan(payload.plan_name, payload.plan)
@@ -169,6 +178,8 @@ async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
         "project_id": payload.project_id,
         "file_path": path,
         "package_type": "sbc304_preliminary_calculation_package",
+        "status": "generated",
+        "tracking": [],
         "contents": ["sbc304_calculation_package", "compliance_report"]
                     + (["boq_summary"] if boq else []),
         "compliance_summary": compliance.get("summary"),
@@ -333,10 +344,60 @@ async def signature_complete(signature_id: str, body: SignatureCompleteBody) -> 
     return updated
 
 
-@router.get("/submission/{project_id}", summary="List submission packages for a project")
-async def list_submissions(project_id: int) -> Dict[str, Any]:
-    docs = _submissions.list(lambda d: d.get("project_id") == project_id)
-    return {"project_id": project_id, "packages": docs}
+@router.get("/submission/{ref}",
+            summary="List a project's submissions (numeric project id) "
+                    "or get one submission's details (submission id)")
+async def submission_ref(ref: str) -> Dict[str, Any]:
+    """Dual-mode per the roadmap #16 contract.
+
+    ``/submission/{project_id}`` (digits) lists that project's packages,
+    newest first; ``/submission/{submission_id}`` returns one record.
+    One route avoids FastAPI's int-conversion 422 shadowing the string-id
+    form (routes are matched in order and never fall through).
+    """
+    if ref.isdigit():
+        project_id = int(ref)
+        docs = _submissions.list(lambda d: d.get("project_id") == project_id)
+        docs.sort(key=lambda d: str(d.get("created_at", "")), reverse=True)
+        return {"project_id": project_id, "packages": docs, "submissions": docs}
+
+    doc = _submissions.get(ref)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+    return doc
+
+
+@router.post("/submission/{submission_id}/status",
+             summary="Record a submission status transition (municipality tracking)")
+async def submission_transition(
+    submission_id: str, body: SubmissionStatusBody,
+) -> Dict[str, Any]:
+    """Append an auditable tracking event and update the record's status.
+
+    Data-driven only: the caller supplies the real-world outcome (submitted,
+    under review, approved, revision required, rejected, signed). Nothing is
+    inferred about the municipality's decision.
+    """
+    doc = _submissions.get(submission_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+
+    event = {
+        "status": body.status,
+        "at": now_iso(),
+        "notes": body.notes,
+        "authority": body.authority,
+        "reference_number": body.reference_number,
+    }
+    tracking = list(doc.get("tracking") or []) + [event]
+    updated = _submissions.update(
+        submission_id, status=body.status, tracking=tracking)
+    audit.log_action("submission_status_changed",
+                     project_id=doc.get("project_id"),
+                     details={"submission_id": submission_id,
+                              "status": body.status,
+                              "reference_number": body.reference_number})
+    return updated
 
 
 @router.post("/submission/generate", summary="Build a municipality-ready submission PDF")
@@ -393,6 +454,8 @@ async def submission_generate(payload: ComplianceRequest,
     record = _submissions.put({
         "project_id": payload.project_id,
         "file_path": str(path),
+        "status": "signed" if signed_by else "generated",
+        "tracking": [],
         "contents": ["calculation_note", "compliance_report"]
                     + (["boq_summary"] if boq else []),
         "signed_by": signed_by,

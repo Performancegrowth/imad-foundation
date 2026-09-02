@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { downloadExport, generateSBC304Package, getAuditLog, getComplianceReport, getSubmissionPackage, getSubmissionReadiness } from '../platformApi.js'
+import { downloadExport, generateSBC304Package, getAuditLog, getComplianceReport, getSubmissionPackage, getSubmissionReadiness, transitionSubmission } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
 
@@ -38,6 +38,15 @@ export default function GovernanceWorkspace() {
   const gen = async () => {
     setBusy(true); setErr(null)
     try { await generateSBC304Package({ project_id: projectId }); load() } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  // Municipality-side tracking (roadmap #16): the caller records the real
+  // outcome; nothing is inferred here.
+  const [nextStatus, setNextStatus] = useState({})
+  const STATUSES = ['generated', 'submitted', 'under_review', 'approved', 'revision_required', 'rejected', 'signed']
+  const applyStatus = async (p) => {
+    setBusy(true); setErr(null)
+    try { await transitionSubmission(p.id, nextStatus[p.id] ?? 'submitted'); load() } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
 
   const rows = report?.checks ?? report?.results ?? []
@@ -94,20 +103,49 @@ export default function GovernanceWorkspace() {
         {loading ? <Spinner label="Loading…" /> : pkg.length === 0
           ? <EmptyState icon="📦" title="No packages yet" hint="Generate the first calculation package." />
           : (
-            <ul className="saved-list">
-              {pkg.map((p) => {
-                const file = p.file_path ?? p.file
-                return (
-                  <li key={p.id}>
-                    <span>{file ? String(file).split(/[\\/]/).pop() : p.id}</span>
-                    <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span className="badge success">{p.signed_by ? `Signed · ${p.signed_by}` : 'Pending review'}</span>
-                      {file && <button className="btn" onClick={() => downloadExport(file)}>Download</button>}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
+            <div className="table-wrap" style={{ marginTop: 12 }}>
+              <table className="data-table">
+                <thead><tr><th>Package</th><th>Status</th><th>Last tracking event</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {pkg.map((p) => {
+                    const file = p.file_path ?? p.file
+                    const events = Array.isArray(p.tracking) ? p.tracking : []
+                    const last = events[events.length - 1]
+                    const status = p.status ?? (p.signed_by ? 'signed' : 'generated')
+                    const badgeClass = ['signed', 'approved'].includes(status) ? 'success'
+                      : ['rejected', 'revision_required'].includes(status) ? 'warn' : ''
+                    return (
+                      <tr key={p.id}>
+                        <td className="small">{file ? String(file).split(/[\\/]/).pop() : p.id}</td>
+                        <td>
+                          <span className={`badge ${badgeClass}`}>{status.replace('_', ' ')}</span>
+                          {p.signed_by && <div className="small muted">by {p.signed_by}</div>}
+                        </td>
+                        <td className="small">
+                          {last
+                            ? <>{last.status}{last.reference_number ? ` · ${last.reference_number}` : ''}{last.authority ? ` · ${last.authority}` : ''}<br /><span className="muted">{String(last.at || '').replace('T', ' ').slice(0, 19)}</span></>
+                            : <span className="muted">—</span>}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {file && <button className="btn" onClick={() => downloadExport(file)}>Download</button>}
+                            <select
+                              className="btn"
+                              value={nextStatus[p.id] ?? 'submitted'}
+                              onChange={(e) => setNextStatus({ ...nextStatus, [p.id]: e.target.value })}
+                              aria-label={`Next status for ${p.id}`}
+                            >
+                              {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                            </select>
+                            <button className="btn" onClick={() => applyStatus(p)} disabled={busy}>Apply</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
       </section>
 

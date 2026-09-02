@@ -144,3 +144,50 @@ def test_governance_readiness_checklist(client):
         assert isinstance(body.get("checks"), list) and body["checks"]
         assert isinstance(body.get("ready"), bool)
         assert body.get("status")
+
+
+def test_governance_submission_tracking_flow(client):
+    """Roadmap #16: dual-mode GET /submission/{ref} plus auditable status
+    transitions. Numeric ref lists a project's packages (sorted), a
+    submission id returns one record, and transitions append tracking
+    events. Nothing 500s and invalid statuses are 422, never guessed."""
+    res = client.post("/api/v1/compliance/sbc304-package", json={
+        "project_id": 1,
+        "project_name": "Tracking Flow",
+        "plan": _SMOKE_PLAN,
+    })
+    assert res.status_code < 500
+
+    # Numeric ref → project listing.
+    listing = client.get("/api/v1/submission/1")
+    assert listing.status_code == 200
+    packages = listing.json().get("packages", [])
+    assert isinstance(packages, list)
+
+    if packages:
+        sub_id = packages[0]["id"]
+
+        # Submission-id ref → single record detail.
+        detail = client.get(f"/api/v1/submission/{sub_id}")
+        assert detail.status_code == 200
+        assert detail.json().get("id") == sub_id
+
+        # A real-world transition appends an auditable tracking event.
+        tr = client.post(f"/api/v1/submission/{sub_id}/status", json={
+            "status": "submitted",
+            "authority": "Baladiyah",
+            "reference_number": "PRM-123",
+        })
+        assert tr.status_code == 200
+        body = tr.json()
+        assert body.get("status") == "submitted"
+        tracking = body.get("tracking") or []
+        assert tracking and tracking[-1]["reference_number"] == "PRM-123"
+
+        # Invalid statuses are rejected by validation, never stored.
+        bad = client.post(f"/api/v1/submission/{sub_id}/status",
+                          json={"status": "bogus"})
+        assert bad.status_code == 422
+
+    # Unknown submission id → 404, not 500.
+    assert client.get("/api/v1/submission/sub-doesnotexist").status_code == 404

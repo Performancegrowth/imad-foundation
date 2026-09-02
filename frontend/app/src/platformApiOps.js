@@ -27,6 +27,9 @@ export const generateSBC304Package = (payload) => post('/compliance/sbc304-packa
 export const getSubmissionReadiness = (projectId) => get(`/compliance/sbc304-readiness/${projectId}`)
 export const requestSignature = (payload) => post('/signature/request', payload)
 export const getSubmissionPackage = (projectId) => get(`/submission/${projectId}`)
+export const getSubmissionById = (submissionId) => get(`/submission/${encodeURIComponent(submissionId)}`)
+export const transitionSubmission = (submissionId, status, extra = {}) =>
+  post(`/submission/${encodeURIComponent(submissionId)}/status`, { status, ...extra })
 export const generateSubmissionPackage = (payload) => post('/submission/generate', payload)
 
 // Download an exports-dir file (PDF etc.) served by GET /exports/download.

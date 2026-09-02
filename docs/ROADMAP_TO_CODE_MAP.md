@@ -485,8 +485,16 @@ This document connects each roadmap item (1-25) to:
 
 ---
 
-### #16: Add submission tracking dashboard
+### #16: Add submission tracking dashboard ✅ DONE
 - **Sprints touched**: 10, 12
+- **Implemented**: dual-mode `GET /submission/{ref}` — a numeric id lists a project's
+  submissions (sorted newest-first), any other id returns one submission's details;
+  `POST /submission/{submission_id}/status` records municipality-side transitions
+  (`generated → submitted → under_review → …`) appended as auditable `tracking` events;
+  `status` + `tracking` are stamped at both record-creation sites. Submissions table in
+  `GovernanceWorkspace.jsx`, client functions in `platformApiOps.js`. Note: the original
+  sketch's two routes (`{project_id}` int vs `{submission_id}` str) would shadow each
+  other in FastAPI, so they were merged into the one dual-mode route.
 - **Files to change**:
   - `backend/app/api/governance.py` (expand):
     ```python
