@@ -59,6 +59,9 @@ class Settings(BaseSettings):
         """Pydantic v1-style env_prefix is omitted; keys map 1:1 to env vars."""
         env_file = ".env"
         case_sensitive = False
+        # Deployment env (docker-compose UPLOAD_DIR/RESULTS_DIR, frontend
+        # VITE_*, superuser bootstrap vars) must not crash settings loading.
+        extra = "ignore"
 
     # -- helpers ------------------------------------------------------
     @property
