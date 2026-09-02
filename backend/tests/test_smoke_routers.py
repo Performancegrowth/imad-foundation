@@ -56,24 +56,59 @@ def test_ecosystem_suppliers_not_500(client):
     assert res.status_code < 500
 
 
+_SMOKE_PLAN = {
+    "source": "smoke",
+    "label": "smoke",
+    "stories": 1,
+    "columns": [
+        {"id": "c1", "cx": 0.0, "cy": 0.0, "size_m": 0.3, "height": 3.0},
+        {"id": "c2", "cx": 5.0, "cy": 0.0, "size_m": 0.3, "height": 3.0},
+        {"id": "c3", "cx": 10.0, "cy": 0.0, "size_m": 0.3, "height": 3.0},
+    ],
+    "beams": [{"id": "b1", "x1": 0.0, "y1": 0.0, "x2": 10.0, "y2": 0.0,
+               "width_m": 0.3, "depth_m": 0.5}],
+    "walls": [],
+    "grids": [],
+}
+
+
 def test_governance_compliance_not_500(client):
     """Compliance engine accepts a minimal plan and returns a report."""
-    plan = {
-        "source": "smoke",
-        "label": "smoke",
-        "stories": 1,
-        "columns": [
-            {"id": "c1", "cx": 0.0, "cy": 0.0, "size_m": 0.3, "height": 3.0},
-            {"id": "c2", "cx": 5.0, "cy": 0.0, "size_m": 0.3, "height": 3.0},
-            {"id": "c3", "cx": 10.0, "cy": 0.0, "size_m": 0.3, "height": 3.0},
-        ],
-        "beams": [{"id": "b1", "x1": 0.0, "y1": 0.0, "x2": 10.0, "y2": 0.0,
-                   "width_m": 0.3, "depth_m": 0.5}],
-        "walls": [],
-        "grids": [],
-    }
-    res = client.post("/api/v1/compliance/check", json={"plan": plan})
+    res = client.post("/api/v1/compliance/check", json={"plan": _SMOKE_PLAN})
     assert res.status_code < 500
+
+
+def test_governance_sbc304_package_not_500(client):
+    """Sprint 10 package endpoint assembles the preliminary PDF package."""
+    analysis = {
+        "method": "equivalent-frame",
+        "design": {
+            "max_utilization": 0.62,
+            "members": [
+                {"id": "c1", "utilization": 0.62,
+                 "governing_check": "axial+moment"},
+            ],
+            "design_factors": {
+                "phi_flexure": {"value": 0.9,
+                                "clause": "ACI 318-19 Table 21.2.1"},
+            },
+            "references": [
+                {"name": "SBC 304", "purpose": "Concrete design",
+                 "source": "Saudi Building Code"},
+            ],
+        },
+    }
+    res = client.post("/api/v1/compliance/sbc304-package", json={
+        "project_id": 1,
+        "project_name": "Smoke Package",
+        "plan": _SMOKE_PLAN,
+        "analysis": analysis,
+    })
+    assert res.status_code < 500
+    if res.status_code == 200:
+        body = res.json()
+        assert body.get("file_path")
+        assert body.get("package_type") == "sbc304_preliminary_calculation_package"
 
 
 def test_platform_analytics_not_500(client):

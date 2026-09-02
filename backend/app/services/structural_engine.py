@@ -124,7 +124,16 @@ class OpenSeesEngine(StructuralEngine):
 
     # -- analytic fallback (deterministic, testable) ---------------------
     def _analytic(self, plan: PlanData, survey, options) -> AnalysisResult:
-        from app.services.concrete_design import concrete_design, preliminary_boq
+        from app.services.concrete_design import (
+            CODE_PARAMS,
+            concrete_design,
+            preliminary_boq,
+        )
+        phi_clauses = {
+            "ACI 318-19": "ACI 318-19 Table 21.2.1",
+            "SBC 304": "SBC 304 (adopted from ACI 318-19 Table 21.2.1)",
+            "EC2": "EN 1992-1-1 partial-factor basis (1/γm)",
+        }
         loads = self._derive_loads(plan, survey, options)
         frame = self._build_frame(plan)
         stories = max(1, plan.stories)
@@ -173,6 +182,37 @@ class OpenSeesEngine(StructuralEngine):
         }
 
         design = concrete_design(forces, materials=plan.materials)
+
+        # Carry the design code identity and the φ factors actually used
+        # (from CODE_PARAMS) into the result, with clause references, so the
+        # SBC 304 report builder can cite them without inventing values.
+        code_key = design.get("code_standard", "ACI 318-19")
+        code_params = CODE_PARAMS.get(code_key, {})
+        phi_clause = phi_clauses.get(
+            code_key, f"{code_key} strength reduction factors"
+        )
+        design["code_source"] = (
+            "Imad concrete_design module — deterministic preliminary "
+            "member design"
+        )
+        design["design_factors"] = {
+            "phi_flexure": {
+                "value": code_params.get("phi_flexure"),
+                "clause": phi_clause,
+            },
+            "phi_axial": {
+                "value": code_params.get("phi_axial"),
+                "clause": phi_clause,
+            },
+        }
+        design["references"] = [
+            {
+                "name": code_key,
+                "purpose": "Member capacity design (strength reduction factors)",
+                "source": phi_clause,
+            },
+        ]
+
         boq = preliminary_boq(plan, forces, materials=plan.materials)
 
         return AnalysisResult(
@@ -216,11 +256,28 @@ class OpenSeesEngine(StructuralEngine):
         weight_kN = floor_kpa * floor_area * max(1, plan.stories)
         cs = float(options.get("seismic_coefficient", 0.10))
         lateral = cs * weight_kN
+        # Load provenance: describe where each number actually comes from so
+        # downstream reports can cite the method truthfully. Code-clause
+        # citation belongs to the compliance engine, not here.
         return {
             "floor_area_kpa": round(floor_kpa, 2),
             "total_weight_kN": round(weight_kN, 2),
             "lateral_base_kN": round(lateral, 2),
             "live_kpa": live,
+            "dead_extra_kpa": round(dead_extra, 2),
+            "live_load_source": (
+                f"Imad default live load {LIVE_DEFAULT} kN/m² "
+                "(option live_kpa)"
+            ),
+            "dead_load_source": (
+                f"Slab self-weight (0.15 m × {UNIT_WEIGHT_CONCRETE} kN/m³) "
+                f"+ {dead_extra} kN/m² superimposed (option dead_extra_kpa) "
+                f"+ {tiles} kN/m² tiles"
+            ),
+            "base_shear_source": (
+                f"Cs = {cs} × total gravity weight "
+                "(option seismic_coefficient)"
+            ),
         }
 
     @staticmethod

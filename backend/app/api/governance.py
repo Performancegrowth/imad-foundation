@@ -10,10 +10,13 @@ from pydantic import BaseModel, Field
 
 from app.core import audit
 from app.core.docstore import collection
+from app.core.storage import load_result
 from app.services.boq_generator import generate_boq
 from app.services.compliance_engine import ComplianceEngine
 from app.services.exporters import build_pdf_report, exports_dir, now_iso
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
+from app.services.sbc304_report import generate_sbc304_report
+from app.services.survey_processor import load_survey_reading
 
 log = logging.getLogger("imad.api.governance")
 router = APIRouter()
@@ -58,8 +61,109 @@ async def compliance_check(payload: ComplianceRequest) -> Dict[str, Any]:
     }, prefix="chk")
     audit.log_action("compliance_check", project_id=payload.project_id,
                      details={"check_id": record["id"],
-                              "passed": report.get("summary", {}).get("pass")})
+                              "passed": report.get("summary", {}).get("passed")})
     return {"check_id": record["id"], **report}
+
+
+class SBCPackageRequest(BaseModel):
+    """Request for the preliminary SBC 304 calculation package (PDF)."""
+
+    project_id: int = 1
+    project_name: Optional[str] = None
+    plan_name: Optional[str] = None
+    plan: Optional[Dict[str, Any]] = None
+    analysis: Optional[Dict[str, Any]] = None
+    analysis_result_id: Optional[str] = None
+    survey: Optional[Dict[str, Any]] = None
+    boq: Optional[Dict[str, Any]] = None
+
+
+@router.post("/compliance/sbc304-package",
+             summary="Generate the preliminary SBC 304 calculation package (PDF)")
+async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
+    """Assemble the Sprint 10 calculation package from engine outputs.
+
+    The report builder only formats results; this endpoint resolves inputs:
+    plan (inline or saved), analysis (inline, or a stored ``/analyze`` result
+    id), survey (inline, or the project's recorded survey), compliance
+    (always recomputed by the authoritative engine) and an optional BOQ.
+    """
+    plan = _resolve_plan(payload.plan_name, payload.plan)
+
+    analysis = payload.analysis
+    if analysis is None and payload.analysis_result_id:
+        analysis = load_result(payload.analysis_result_id)
+        if not analysis:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Analysis result '{payload.analysis_result_id}' not found.",
+            )
+    if analysis is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide 'analysis' or 'analysis_result_id'.",
+        )
+
+    survey = payload.survey
+    if survey is None and payload.project_id:
+        reading = load_survey_reading(payload.project_id)
+        if reading is not None:
+            survey = reading.model_dump()
+
+    # The compliance engine always runs here — the report builder never
+    # invents or overrides PASS/WARN/FAIL results.
+    compliance = ComplianceEngine(
+        plan, analysis=analysis, survey=survey,
+    ).run_all()
+
+    boq = payload.boq
+    if boq is None:
+        try:
+            boq = generate_boq(
+                plan, project_name=payload.project_name
+                or f"Project {payload.project_id}"
+            )
+        except Exception as exc:  # BOQ is supplementary — never blocks
+            log.warning("SBC 304 package BOQ skipped: %s", exc)
+            boq = None
+
+    # Promote engine metadata carried inside the design dict so the report
+    # builder sees a flat, auditable result object. Caller top-level keys
+    # always win; nothing is fabricated when absent. The document code
+    # identity is left to the compliance engine (SBC 304), while the design
+    # code used by concrete_design travels inside design_factors/references.
+    design = analysis.get("design") if isinstance(analysis.get("design"), dict) else {}
+    report_analysis = {
+        **analysis,
+        "method": analysis.get("method") or analysis.get("solver"),
+        "design_factors": analysis.get("design_factors")
+        or design.get("design_factors"),
+        "references": analysis.get("references") or design.get("references"),
+    }
+
+    path = generate_sbc304_report(
+        project_id=payload.project_id,
+        project_name=payload.project_name or f"Project {payload.project_id}",
+        plan=plan,
+        analysis=report_analysis,
+        compliance=compliance,
+        boq=boq,
+        survey=survey,
+    )
+
+    record = _submissions.put({
+        "project_id": payload.project_id,
+        "file_path": path,
+        "package_type": "sbc304_preliminary_calculation_package",
+        "contents": ["sbc304_calculation_package", "compliance_report"]
+                    + (["boq_summary"] if boq else []),
+        "compliance_summary": compliance.get("summary"),
+        "analysis_result_id": payload.analysis_result_id,
+        "signed_by": None,
+    }, prefix="sub")
+    audit.log_action("sbc304_package_generated", project_id=payload.project_id,
+                     details={"package_id": record["id"], "path": path})
+    return record
 
 
 @router.post("/signature/request", summary="Approve & sign — request engineer signature")
@@ -126,18 +230,22 @@ async def submission_generate(payload: ComplianceRequest,
 
     sections = [("Compliance results", [[
         "Check", "Clause", "Status", "Detail"
-    ]] + [[c.get("check"), c.get("clause", ""), c.get("status"),
-          c.get("detail", "")] for c in report.get("checks", [])],
-        f"{report.get('summary', {}).get('pass', 0)} passed · "
-        f"{report.get('summary', {}).get('fail', 0)} failed · "
-        f"{report.get('summary', {}).get('warn', 0)} warnings."),
+    ]] + [[c.get("check_name"), (c.get("details") or {}).get("clause", ""),
+          c.get("status"),
+          (c.get("details") or {}).get("note")
+          or (c.get("details") or {}).get("message", "")]
+         for c in report.get("checks", [])],
+        f"{report.get('summary', {}).get('passed', 0)} passed · "
+        f"{report.get('summary', {}).get('failed', 0)} failed · "
+        f"{report.get('summary', {}).get('warned', 0)} warnings."),
     ]
     if boq:
+        totals = boq.get("totals") or {}
         sections.append(("Preliminary BOQ totals",
                          [["Metric", "Value"],
-                          ["Total estimate (USD)", boq["totals"]["amount_usd"]],
-                          ["Cost / m² (USD)", boq["totals"]["amount_per_m2"]],
-                          ["Rebar (kg)", boq["totals"]["rebar_kg"]]],
+                          ["Total estimate (USD)", totals.get("amount_usd", "N/A")],
+                          ["Cost / m² (USD)", totals.get("amount_per_m2", "N/A")],
+                          ["Rebar (kg)", totals.get("rebar_kg", "N/A")]],
                          None))
 
     path = exports_dir() / f"submission-p{payload.project_id}-{_stamp_slug()}.pdf"
@@ -151,9 +259,9 @@ async def submission_generate(payload: ComplianceRequest,
             ["Generated", now_iso()],
         ],
         summary_box={
-            "Checks passed": report.get("summary", {}).get("pass", 0),
-            "Checks failed": report.get("summary", {}).get("fail", 0),
-            "Warnings": report.get("summary", {}).get("warn", 0),
+            "Checks passed": report.get("summary", {}).get("passed", 0),
+            "Checks failed": report.get("summary", {}).get("failed", 0),
+            "Warnings": report.get("summary", {}).get("warned", 0),
         },
         sections=sections,
         chart_drawing=None,

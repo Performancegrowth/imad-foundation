@@ -99,6 +99,7 @@ def run_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "design": result.design,
         "boq": result.boq,
+        "loads": result.loads,
         "reactions": result.reactions,
         "member_forces": [f.__dict__ for f in result.member_forces],
     }
