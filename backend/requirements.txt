@@ -61,6 +61,7 @@ deap>=1.4            # NSGA-II multi-objective optimisation
 reportlab>=4.0       # branded PDF reports (BOQ, LCA, submissions)
 openpyxl>=3.1        # Excel workbooks (Summary / BOQ / BBS sheets)
 xlsxwriter>=3.1      # alternative Excel writer
+python-docx>=1.1     # editable Word calculation notes (submission DOCX export)
 
 # ── Queue / background jobs (Sprint 14) ────────────────────────────
 redis>=5.0           # broker for background jobs (worker service)

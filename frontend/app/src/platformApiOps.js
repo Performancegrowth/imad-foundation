@@ -30,6 +30,9 @@ export const getSubmissionPackage = (projectId) => get(`/submission/${projectId}
 export const getSubmissionById = (submissionId) => get(`/submission/${encodeURIComponent(submissionId)}`)
 export const transitionSubmission = (submissionId, status, extra = {}) =>
   post(`/submission/${encodeURIComponent(submissionId)}/status`, { status, ...extra })
+// Roadmap #17: editable Word calculation note for a submission package.
+export const exportSubmissionDocx = (submissionId, payload = {}) =>
+  post(`/submission/${encodeURIComponent(submissionId)}/export/docx`, payload)
 export const generateSubmissionPackage = (payload) => post('/submission/generate', payload)
 
 // Download an exports-dir file (PDF etc.) served by GET /exports/download.

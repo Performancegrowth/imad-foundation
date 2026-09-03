@@ -191,3 +191,56 @@ def test_governance_submission_tracking_flow(client):
 
     # Unknown submission id → 404, not 500.
     assert client.get("/api/v1/submission/sub-doesnotexist").status_code == 404
+
+
+def test_boq_xlsx_export_with_context(client):
+    """Roadmap #18: the Excel export widens to Submission Summary, Material
+    Certifications and Rates Comparison sheets using stored context. The
+    endpoint must produce a real .xlsx file and never 500."""
+    from pathlib import Path as _P
+
+    gen = client.post("/api/v1/generate-boq", json={
+        "project_id": 1, "project_name": "Xlsx Flow", "plan": _SMOKE_PLAN,
+    })
+    assert gen.status_code < 500
+    rid = gen.json().get("result_id")
+    assert rid
+
+    res = client.post(f"/api/v1/generate-boq/{rid}/export/xlsx")
+    assert res.status_code < 500
+    if res.status_code == 200:
+        data = res.json()
+        assert data.get("file", "").endswith(".xlsx")
+        assert _P(data["file"]).exists()
+
+    # Unknown result id → 404, not 500.
+    assert client.post("/api/v1/generate-boq/boq-nope/export/xlsx").status_code == 404
+
+
+def test_submission_docx_export(client):
+    """Roadmap #17: a generated SBC 304 package exports as an editable Word
+    calculation note. The endpoint resolves the same stored inputs as the
+    package flow, writes a real .docx and never 500s."""
+    from pathlib import Path as _P
+
+    pkg = client.post("/api/v1/compliance/sbc304-package", json={
+        "project_id": 1, "project_name": "Docx Flow", "plan": _SMOKE_PLAN,
+    })
+    assert pkg.status_code < 500
+
+    listing = client.get("/api/v1/submission/1")
+    assert listing.status_code == 200
+    packages = listing.json().get("packages", [])
+    assert packages, "package generation should record a submission"
+
+    res = client.post(f"/api/v1/submission/{packages[0]['id']}/export/docx",
+                      json={})
+    assert res.status_code < 500
+    if res.status_code == 200:
+        data = res.json()
+        assert data.get("file", "").endswith(".docx")
+        assert _P(data["file"]).exists()
+
+    # Unknown submission id → 404, not 500.
+    assert client.post("/api/v1/submission/sub-nope/export/docx",
+                       json={}).status_code == 404

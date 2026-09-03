@@ -391,13 +391,23 @@ def boq_pdf(boq: Dict[str, Any], out_path: Optional[str] = None) -> str:
     return str(path)
 
 
-def boq_xlsx(boq: Dict[str, Any], out_path: Optional[str] = None) -> str:
-    """Three-sheet workbook: Summary, BOQ, BBS."""
+def boq_xlsx(boq: Dict[str, Any], out_path: Optional[str] = None,
+             context: Optional[Dict[str, Any]] = None) -> str:
+    """Workbook export — widened for roadmap #18.
+
+    Base three sheets: Summary, BOQ, BBS. When ``context`` is supplied
+    (assembled by ``boq._gather_export_context``), three more sheets are
+    appended: Submission Summary (latest package + compliance + carbon),
+    Material Certifications (supplier directory) and Rates Comparison
+    (BOQ rates vs regional cost records). Sections render only from data
+    that actually exists — missing context keeps the legacy layout.
+    """
     from .exporters import build_workbook, exports_dir
 
     path = Path(out_path) if out_path else (
         exports_dir() / f"boq-{datetime.now(timezone.utc):%Y%m%d%H%M%S}.xlsx")
 
+    context = context or {}
     sheets = [
         ("Summary", boq["project_name"], [
             ["Metric", "Value"],
@@ -420,5 +430,86 @@ def boq_xlsx(boq: Dict[str, Any], out_path: Optional[str] = None) -> str:
               bar["cut_length_m"], bar["qty"], bar["total_length_m"],
               bar["weight_kg"], bar["spacing"]] for bar in boq["bbs"]["bars"]]),
     ]
+
+    # ── Submission Summary: latest package, compliance run, carbon report ──
+    submission = context.get("submission") or {}
+    comp_report = (context.get("compliance") or {}).get("report") or {}
+    carbon = (context.get("carbon") or {}).get("carbon") or {}
+    if submission or comp_report or carbon:
+        rows = [["Metric", "Value"]]
+        if submission:
+            tracking = submission.get("tracking") or []
+            last = tracking[-1] if tracking else None
+            signed = submission.get("signed_by")
+            if isinstance(signed, dict):
+                signed = signed.get("engineer_name") or signed.get("name")
+            rows += [
+                ["Package id", submission.get("id")],
+                ["Package status", submission.get("status")],
+                ["Signed by", signed],
+                ["Contents", ", ".join(submission.get("contents") or [])],
+                ["Tracking events", len(tracking)],
+                ["Last event", (
+                    f"{last.get('status', '')} @ {last.get('at', '')} · "
+                    f"{last.get('authority', '')} "
+                    f"{last.get('reference_number', '')}").strip(' ·')
+                    if last else None],
+            ]
+        if comp_report:
+            summary = comp_report.get("summary") or {}
+            rows += [
+                ["Compliance checks passed", summary.get("passed", 0)],
+                ["Compliance checks failed", summary.get("failed", 0)],
+                ["Compliance warnings", summary.get("warned", 0)],
+            ]
+        if carbon:
+            rows += [
+                ["Embodied carbon (t CO₂e)", carbon.get("total_co2e_tonnes")],
+                ["Carbon intensity (kgCO₂e/m²)",
+                 carbon.get("intensity_kgco2e_m2")],
+                ["Benchmark band", carbon.get("benchmark_band")],
+            ]
+        sheets.append(("Submission Summary",
+                       "Submission package & sustainability summary", rows))
+
+    # ── Material Certifications: the supplier directory as recorded ──
+    supplier_rows = [["Supplier", "Region", "Categories", "Verified",
+                      "Rating (0–5)", "Contact"]]
+    for s in context.get("suppliers") or []:
+        supplier_rows.append([
+            s.get("company"), s.get("region"),
+            ", ".join(s.get("categories") or []),
+            "Yes" if s.get("verified") else "No",
+            s.get("rating", 0), s.get("contact_email"),
+        ])
+    if len(supplier_rows) == 1:
+        supplier_rows.append(["—", "No suppliers registered yet", "", "", "", ""])
+    sheets.append(("Material Certifications",
+                   "Supplier directory — vetting status as recorded",
+                   supplier_rows))
+
+    # ── Rates Comparison: BOQ rate vs regional cost records ──
+    by_code: Dict[str, List[Dict[str, Any]]] = {}
+    for c in context.get("costs") or []:
+        code = str(c.get("item_code") or "").upper()
+        if code:
+            by_code.setdefault(code, []).append(c)
+    rate_rows = [["Code", "Description", "Unit", "BOQ rate USD",
+                  "Regions with records", "Min override USD",
+                  "Max override USD"]]
+    for item in boq["items"]:
+        recs = by_code.get(str(item["code"]).upper(), [])
+        overrides = sorted(float(r["unit_cost"]) for r in recs
+                           if r.get("unit_cost") is not None)
+        rate_rows.append([
+            item["code"], item["description"], item["unit"], item["rate"],
+            ", ".join(sorted({str(r.get("region") or "") for r in recs}))
+            or "—",
+            overrides[0] if overrides else "—",
+            overrides[-1] if overrides else "—",
+        ])
+    sheets.append(("Rates Comparison",
+                   "BOQ rates vs the regional cost database", rate_rows))
+
     build_workbook(path, sheets)
     return str(path)

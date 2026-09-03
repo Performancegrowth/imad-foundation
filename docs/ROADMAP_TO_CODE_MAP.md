@@ -565,8 +565,27 @@ This document connects each roadmap item (1-25) to:
 
 ---
 
-### #17: Add python-docx for Word calculation notes
+### #17: Add python-docx for Word calculation notes ✅ DONE
 - **Sprints touched**: 10, 15
+- **Implemented** (differs from the sketch below — submission-scoped and
+  data-driven): `python-docx>=1.1` in requirements (1.2.0 installed).
+  `exporters.submission_docx()` builds an editable "Structural Calculation
+  Note — SBC 304": design basis from the recorded survey, member forces
+  (capped at 60 rows with an explicit note), φ design factors with clause
+  references, design utilization (max + governing member), analysis summary,
+  clause-referenced compliance table with green/amber/red statuses, BOQ
+  totals + itemized rates, and a certification block with signature lines.
+  A section is written only when its backing data exists, so the note can
+  never claim more than the engines computed. `governance.py` adds
+  `POST /submission/{submission_id}/export/docx` resolving the same inputs
+  as the package endpoint: latest saved plan (or `plan_name` override) →
+  stored analysis (record ref → latest stored, matched by the
+  `member_forces` marker since analysis results carry no `kind` tag → fresh
+  run), recorded survey, **freshly recomputed** compliance, best-effort BOQ;
+  stores `docx_path` on the submission and audit-logs the export. Frontend:
+  `Word` button in GovernanceWorkspace + `exportSubmissionDocx()` in
+  `platformApiOps.js`. Test: `test_governance_submission_docx_export`
+  (real .docx on disk, 404 never 500). Sketch below kept as the original spec.
 - **Files to change**:
   - `backend/requirements.txt` → add `python-docx>=0.8.11`
   
@@ -647,13 +666,24 @@ This document connects each roadmap item (1-25) to:
 
 ---
 
-### #18: Add openpyxl for enhanced BOQ Excel export ✅ PARTIALLY DONE
+### #18: Add openpyxl for enhanced BOQ Excel export ✅ DONE
 - **Sprints touched**: 7, 15
 - **Current state**:
   - `backend/requirements.txt` has `openpyxl>=3.1`
   - `backend/app/services/exporters.py` has `boq_xlsx()` function
   - `backend/app/api/boq.py` (line 108-119) calls it
-- **What's missing**:
+- **Implemented** (the three "missing" sheets below): `boq_xlsx(boq,
+  out_path=None, context=None)` now widens the Summary/BOQ/BBS workbook with
+  **Submission Summary** (total estimate, embodied carbon, compliance
+  tallies), **Material Certifications** (per concrete class + rebar) and
+  **Rates Comparison** (Imad defaults vs. the regional cost-records
+  database, matched on the CONC-FOUND/FRAME/SLAB, REBAR, FORM-* item codes)
+  — each sheet emitted only when its context exists. `boq.py` gathers the
+  context via `_gather_export_context(result_id)` (latest carbon report,
+  compliance run and SBC 304 submission package for the BOQ's project).
+  Test: `test_boq_xlsx_export_with_context` (real .xlsx on disk, 404 never
+  500). Sketch below kept as the original spec.
+- **Was missing**:
   - Submission Summary sheet (project info, total cost, total carbon, compliance status)
   - Material certifications sheet
   - Schedule of rates comparison

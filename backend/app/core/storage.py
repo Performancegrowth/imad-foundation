@@ -12,7 +12,7 @@ import os
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 def storage_root() -> Path:
@@ -104,6 +104,31 @@ def load_result(result_id: str) -> Optional[Dict[str, Any]]:
         return json.loads(target.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
+
+
+def list_results(kind: Optional[str] = None,
+                 project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Stored result envelopes (oldest → newest), optionally filtered.
+
+    Result files carry ``{"id", "status", "payload", "created_at"}``; the
+    inner payload repeats ``kind`` and ``project_id``. Missing or corrupt
+    files are skipped — listing is best-effort by design.
+    """
+    out: List[Dict[str, Any]] = []
+    for path in sorted(results_dir().glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        inner = record.get("payload") or {}
+        if kind is not None and inner.get("kind") != kind:
+            continue
+        if project_id is not None and inner.get("project_id") != project_id:
+            continue
+        out.append(record)
+    return out
 
 
 def result_id(prefix: str = "r") -> str:

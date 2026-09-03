@@ -10,7 +10,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core import jobs
-from app.core.storage import load_result, result_id, save_result
+from app.core.docstore import collection
+from app.core.storage import list_results, load_result, result_id, save_result
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
 from app.services.boq_generator import BOQError, boq_pdf, boq_xlsx, generate_boq
@@ -121,11 +122,12 @@ async def export_pdf(result_id: str) -> Dict[str, Any]:
 
 
 @router.post("/generate-boq/{result_id}/export/xlsx",
-             summary="Export a stored BOQ as an Excel workbook (Summary/BOQ/BBS)")
+             summary="Export a stored BOQ as an Excel workbook "
+                     "(Summary/BOQ/BBS + submission, certifications, rates)")
 async def export_xlsx(result_id: str) -> Dict[str, Any]:
     record = _load_boq(result_id)
     try:
-        path = boq_xlsx(record)
+        path = boq_xlsx(record, context=_gather_export_context(result_id))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Excel export failed: {exc}") from exc
     from app.core import audit
@@ -164,3 +166,52 @@ def _load_boq(result_id: str) -> Dict[str, Any]:
     if not isinstance(inner, dict) or "items" not in inner:
         raise HTTPException(status_code=422, detail="Result is not a BOQ.")
     return inner
+
+
+def _boq_project_id(result_id: str) -> Optional[int]:
+    """Project id carried on the stored result envelope (not the BOQ body)."""
+    record = load_result(result_id)
+    if not record:
+        return None
+    payload = record.get("payload") or {}
+    inner = payload.get("payload", payload)
+    pid = payload.get("project_id", inner.get("project_id"))
+    try:
+        return int(pid) if pid else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _gather_export_context(result_id: str) -> Dict[str, Any]:
+    """Stored context for the workbook (roadmap #18): the latest carbon
+    report, compliance run and submission package for the BOQ's project,
+    plus the supplier directory and regional cost records. Best-effort by
+    design — missing stores yield empty data and the workbook stays honest
+    about what actually exists."""
+    context: Dict[str, Any] = {}
+    project_id = _boq_project_id(result_id)
+
+    if project_id is not None:
+        carbon = list_results(kind="carbon", project_id=project_id)
+        if carbon:
+            context["carbon"] = carbon[-1].get("payload") or {}
+        checks = [d for d in collection("compliance_checks").list()
+                  if d.get("project_id") == project_id]
+        if checks:
+            context["compliance"] = max(
+                checks, key=lambda d: str(d.get("created_at", "")))
+        subs = [d for d in collection("submission_packages").list()
+                if d.get("project_id") == project_id]
+        if subs:
+            context["submission"] = max(
+                subs, key=lambda d: str(d.get("created_at", "")))
+
+    try:
+        context["suppliers"] = collection("suppliers").list()
+    except Exception:
+        context["suppliers"] = []
+    try:
+        context["costs"] = collection("cost_records").list()
+    except Exception:
+        context["costs"] = []
+    return context

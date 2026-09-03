@@ -11,10 +11,11 @@ from pydantic import BaseModel, Field
 
 from app.core import audit
 from app.core.docstore import collection
-from app.core.storage import load_result
+from app.core.storage import list_results, load_result
 from app.services.boq_generator import generate_boq
 from app.services.compliance_engine import ComplianceEngine
-from app.services.exporters import build_pdf_report, exports_dir, now_iso
+from app.services.exporters import (ExportError, build_pdf_report, exports_dir,
+                                    now_iso, submission_docx)
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
 from app.services.sbc304_report import generate_sbc304_report
 from app.services.survey_processor import load_survey_reading
@@ -176,6 +177,7 @@ async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
 
     record = _submissions.put({
         "project_id": payload.project_id,
+        "project_name": payload.project_name or f"Project {payload.project_id}",
         "file_path": path,
         "package_type": "sbc304_preliminary_calculation_package",
         "status": "generated",
@@ -189,6 +191,125 @@ async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
     audit.log_action("sbc304_package_generated", project_id=payload.project_id,
                      details={"package_id": record["id"], "path": path})
     return record
+
+
+class SubmissionDocxBody(BaseModel):
+    """Optional overrides for the editable Word calculation note."""
+    engineer_name: Optional[str] = None
+    plan_name: Optional[str] = None
+
+
+@router.post("/submission/{submission_id}/export/docx",
+             summary="Export a submission package as an editable Word "
+                     "calculation note (roadmap #17)")
+async def submission_docx_export(
+    submission_id: str, body: Optional[SubmissionDocxBody] = None,
+) -> Dict[str, Any]:
+    """The working companion to the sealed SBC 304 PDF.
+
+    Resolves the same inputs as the package endpoint — latest saved plan,
+    recorded survey, stored-or-fresh analysis, recomputed compliance and a
+    best-effort BOQ — so the note can never claim more than the engines
+    computed. The signed PDF remains the authoritative document.
+    """
+    record = _submissions.get(submission_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+    overrides = body or SubmissionDocxBody()
+    project_id = int(record.get("project_id") or 0)
+
+    # ── plan (explicitly named wins, else the latest saved plan) ──
+    plan_name = overrides.plan_name
+    if not plan_name:
+        try:
+            saved = list(PlanGenerator.list_plans(project_id) or [])
+        except Exception:
+            saved = []
+        plan_name = next(
+            (str(p.get("name") if isinstance(p, dict)
+                 else getattr(p, "name", ""))
+             for p in saved
+             if (p.get("name") if isinstance(p, dict)
+                 else getattr(p, "name", ""))),
+            None)
+    if not plan_name:
+        raise HTTPException(
+            status_code=422,
+            detail="No saved plan for this project — generate the SBC 304 "
+                   "package first.")
+    try:
+        plan = PlanGenerator.load_plan(project_id, plan_name)
+    except PlanGenerationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # ── analysis: record's stored result → latest stored → fresh run ──
+    analysis: Optional[Dict[str, Any]] = None
+    if record.get("analysis_result_id"):
+        stored = load_result(str(record["analysis_result_id"]))
+        if isinstance(stored, dict):
+            analysis = stored.get("payload")
+    if analysis is None:
+        # Analysis results are stored without a ``kind`` tag but always
+        # carry ``member_forces`` — that's the reliable marker.
+        stored_analyses = [r for r in list_results(project_id=project_id)
+                           if isinstance(r.get("payload"), dict)
+                           and "member_forces" in r["payload"]]
+        if stored_analyses:
+            analysis = stored_analyses[-1]["payload"]
+    if analysis is None:
+        from app.api.analysis import run_analysis
+
+        try:
+            analysis = run_analysis({"project_id": project_id,
+                                     "plan": plan.model_dump(mode="json")})
+        except Exception as exc:
+            log.warning("DOCX export: fresh analysis unavailable: %s", exc)
+            analysis = {}
+
+    survey = load_survey_reading(project_id)
+    survey_dict = survey.model_dump() if survey is not None else None
+
+    # The compliance engine always recomputes — the note never invents
+    # PASS/WARN/FAIL results.
+    compliance = ComplianceEngine(
+        plan, analysis=analysis, survey=survey_dict).run_all()
+
+    # ── best-effort BOQ (supplementary — never blocks the note) ──
+    boq = None
+    try:
+        boq = generate_boq(plan, survey=survey,
+                           project_name=record.get("project_name")
+                           or f"Project {project_id}")
+    except Exception as exc:
+        log.warning("DOCX export BOQ skipped: %s", exc)
+
+    # Promote engine metadata carried inside the design dict (same
+    # flattening as the package endpoint) so both documents agree.
+    design = analysis.get("design") if isinstance(analysis.get("design"), dict) else {}
+    report_analysis = {
+        **analysis,
+        "method": analysis.get("method") or analysis.get("solver"),
+        "design_factors": analysis.get("design_factors")
+        or design.get("design_factors"),
+        "references": analysis.get("references") or design.get("references"),
+    }
+
+    path = submission_docx(
+        exports_dir() / f"submission-{submission_id}-calc-note.docx",
+        project_id=project_id,
+        project_name=record.get("project_name") or f"Project {project_id}",
+        analysis=report_analysis,
+        compliance=compliance,
+        boq=boq,
+        survey=survey_dict,
+        engineer_name=overrides.engineer_name or record.get("signed_by"),
+    )
+    _submissions.update(submission_id, docx_path=str(path))
+    audit.log_action("submission_docx_exported", project_id=project_id,
+                     details={"submission_id": submission_id,
+                              "path": str(path)})
+    return {"submission_id": submission_id, "file": str(path),
+            "filename": Path(path).name}
 
 
 @router.get("/compliance/sbc304-readiness/{project_id}",

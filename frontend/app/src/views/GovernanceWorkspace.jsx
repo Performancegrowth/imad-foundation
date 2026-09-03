@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { downloadExport, generateSBC304Package, getAuditLog, getComplianceReport, getSubmissionPackage, getSubmissionReadiness, transitionSubmission } from '../platformApi.js'
+import { downloadExport, exportSubmissionDocx, generateSBC304Package, getAuditLog, getComplianceReport, getSubmissionPackage, getSubmissionReadiness, transitionSubmission } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
 
@@ -129,6 +129,17 @@ export default function GovernanceWorkspace() {
                         <td>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             {file && <button className="btn" onClick={() => downloadExport(file)}>Download</button>}
+                            {file && (
+                              <button className="btn" disabled={busy}
+                                title="Editable Word calculation note (roadmap #17)"
+                                onClick={async () => {
+                                  setBusy(true); setErr(null)
+                                  try {
+                                    const note = await exportSubmissionDocx(p.id)
+                                    await downloadExport(note.file, note.filename)
+                                  } catch (e) { setErr(e.message) } finally { setBusy(false) }
+                                }}>Word</button>
+                            )}
                             <select
                               className="btn"
                               value={nextStatus[p.id] ?? 'submitted'}
