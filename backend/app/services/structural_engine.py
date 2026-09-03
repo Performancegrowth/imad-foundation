@@ -19,6 +19,11 @@ from typing import Any, Dict, List, Optional
 
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
+from app.services.load_combinations import (
+    NOTES as COMBO_NOTES,
+    envelope as envelope_actions,
+    strength_combinations,
+)
 
 log = logging.getLogger("imad.structural")
 
@@ -45,6 +50,7 @@ class MemberForce:
     shear_kN: float = 0.0
     axial_kN: float = 0.0
     deflection_mm: float = 0.0
+    load_combo: str = ""                       # governing SBC 301 §5.3 combo
 
 
 @dataclass
@@ -139,31 +145,65 @@ class OpenSeesEngine(StructuralEngine):
         stories = max(1, plan.stories)
         floor_h = float(options.get("floor_height_m", 3.0))
 
-        forces: List[MemberForce] = []
+        # Roadmap #9a — split the service floor load into dead / live cases
+        # and combine per SBC 301 §5.3 strength combos, enveloping each
+        # member. Seismic (E) combos apply only when a lateral case exists.
+        dead_kpa = round(loads["floor_area_kpa"] - loads["live_kpa"], 3)
+        lateral_kN = loads["lateral_base_kN"]
+        combos = strength_combinations(include_seismic=lateral_kN > 0)
+        loads["load_cases"] = {
+            "dead_kpa": dead_kpa,
+            "live_kpa": loads["live_kpa"],
+            "seismic_base_kN": lateral_kN,
+        }
+        loads["load_combinations"] = combos
+        loads["combination_notes"] = list(COMBO_NOTES)
 
-        # --- beams: uniform tributary load -> simple-span actions
+        forces: List[MemberForce] = []
+        warnings: List[str] = []
+
+        # --- beams: dead + live simple-span actions -> combo envelope
         for beam in plan.beams:
             span = math.hypot(beam.x2 - beam.x1, beam.y2 - beam.y1) or 1.0
             tributary_width = self._tributary_width(plan, beam)
-            w = (loads["floor_area_kpa"] * tributary_width
-                 + UNIT_WEIGHT_CONCRETE * beam.width_m * beam.depth_m)
-            moment = w * span * span / 8.0
-            shear = w * span / 2.0
-            deflection = (5 * w * span ** 4) / (384 * self._beam_rigidity(beam))
+            w_sw = UNIT_WEIGHT_CONCRETE * beam.width_m * beam.depth_m
+            w_d = dead_kpa * tributary_width + w_sw
+            w_l = loads["live_kpa"] * tributary_width
+            env = envelope_actions(
+                {"D": {"M": w_d * span * span / 8.0, "V": w_d * span / 2.0, "N": 0.0},
+                 "L": {"M": w_l * span * span / 8.0, "V": w_l * span / 2.0, "N": 0.0}},
+                combos)
+            # Serviceability deflection uses unfactored D + L — combos are
+            # for strength only (ACI 318-19 §5.3 vs §24.2 split).
+            deflection = (5 * (w_d + w_l) * span ** 4) / (384 * self._beam_rigidity(beam))
             forces.append(MemberForce(
                 element_id=beam.id, kind="beam", level=beam.level,
-                moment_kNm=round(moment, 2), shear_kN=round(shear, 2),
+                moment_kNm=round(env["M"]["value"], 2),
+                shear_kN=round(env["V"]["value"], 2),
                 deflection_mm=round(deflection * 1000, 2),
+                load_combo=env["M"]["combo"],
             ))
 
-        # --- columns: axial from tributary area
+        # --- columns: dead / live / seismic axial cases -> combo envelope
         total_floor_area = self._plan_area(plan)
-        base_load = loads["floor_area_kpa"] * total_floor_area * stories
+        n_cols = max(len(plan.columns), 1)
+        p_d = dead_kpa * total_floor_area * stories / n_cols
+        p_l = loads["live_kpa"] * total_floor_area * stories / n_cols
+        p_e = lateral_kN * floor_h / n_cols
         for col in plan.columns:
-            P = base_load / max(len(plan.columns), 1)
-            P += loads["lateral_base_kN"] * floor_h / max(len(plan.columns), 1)
+            env = envelope_actions(
+                {"D": {"M": 0.0, "V": 0.0, "N": p_d},
+                 "L": {"M": 0.0, "V": 0.0, "N": p_l},
+                 "E": {"M": 0.0, "V": 0.0, "N": p_e}},
+                combos)
+            if env["N_min"]["value"] < 0.0:
+                warnings.append(
+                    f"Column {col.id}: net axial tension under "
+                    f"{env['N_min']['combo']} — verify overturning and anchorage.")
             forces.append(MemberForce(
-                element_id=col.id, kind="column", level=0, axial_kN=round(P, 2),
+                element_id=col.id, kind="column", level=0,
+                axial_kN=round(env["N_max"]["value"], 2),
+                load_combo=env["N_max"]["combo"],
             ))
 
         # --- summary metrics
@@ -232,7 +272,9 @@ class OpenSeesEngine(StructuralEngine):
                 solver="analytic",
                 nodes=len(frame["nodes"]),
                 elements=len(frame["elements"]),
-                stats={"stories": stories, "column_count": len(plan.columns)},
+                stats={"stories": stories, "column_count": len(plan.columns),
+                       "load_combinations": len(combos)},
+                warnings=warnings,
             ),
         )
 

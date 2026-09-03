@@ -189,9 +189,37 @@ This document connects each roadmap item (1-25) to:
 
 ## Phase 2: Core Engineering (Week 4-6)
 
-### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL
+### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a DONE)
 - **Sprints touched**: 5, 10
+- **Implemented (#9a — load-combination engine)**: new
+  `backend/app/services/load_combinations.py` — SBC 301 (ACI 318-19 §5.3)
+  strength combos as data (1.4D; 1.2D+1.6L; 1.2D+1.0E+1.0L; 0.9D+1.0E; wind
+  combos opt-in) with linear-superposition `combine()` + per-member
+  `envelope()` (M/V on |max|, axial on max AND min so 0.9D+1.0E uplift can
+  govern). `structural_engine._analytic` now splits dead/live/seismic load
+  cases, designs at factored ULS demand (was: service-level D+L), stamps
+  every `MemberForce.load_combo` with its governing combo, keeps deflection
+  unfactored (serviceability per §24.2), records the applied combo table +
+  load-case split + honest omission notes in `result.loads`, and warns when
+  a column sees net tension under 0.9D+1.0E. Tests:
+  `backend/tests/test_load_combinations.py` (catalogue, superposition,
+  uplift envelope, exact LC2 moment check, determinism).
+  **OSS verdict (verified licenses)**: no legit ACI/ASCE combo generator
+  exists on GitHub (0 results) — built in-house; `structuralcodes`
+  (Apache-2.0, fib International) adopted below for formula cross-checks;
+  `anaStruct` is LGPL-3.0 + 2D-only (arm's-length cross-check only, not a
+  dependency); `PyNite`'s PyPI name is squatted by a Fortnite wrapper — avoid.
+- **Remaining sub-items**:
+  - **#9b** — punching shear check at slab–column joints (§8.5 / ACI 22.6)
+  - **#9c** — real bar selection from design feeding compliance (kill
+    `rho_provided_assumed`)
+  - **#9d** — beam/column shear design + development length + detailing
+  - **#9e** — wind (SBC 301 ch. 26–31) + full ELF with site class + drift
+  - **#9f** — adopt `structuralcodes` as cross-check for section formulas
 - **Current state**:
+  - ACI 318 hardcoded in `backend/app/services/concrete_design.py`
+  - SBC 304 hardcoded in `backend/app/services/compliance_engine.py`
+  - No abstraction for swappable codes
   - ACI 318 hardcoded in `backend/app/services/concrete_design.py`
   - SBC 304 hardcoded in `backend/app/services/compliance_engine.py`
   - No abstraction for swappable codes
@@ -824,6 +852,36 @@ This document connects each roadmap item (1-25) to:
 
 ---
 
+### #31: 3D dual-mode viewer — engineer analysis view + customer confidence view
+- **Sprints touched**: 9, 15
+- **Why**: the scene exists (`building_scene.py`: columns/beams/walls with
+  utilization coloring + glTF export) but serves neither audience well.
+  Engineers need analysis truth; customers need confidence. Same scene
+  graph, two modes.
+- **Engineer mode (analysis view)**:
+  - Utilization heat-map with a visible color-ramp legend (0 → 1.0, red > 1.0)
+  - Deformed-shape overlay (deflections already in AnalysisResult; scaled,
+    ghosted original beneath)
+  - Moment/shear diagrams drawn along beams from member forces
+  - Click a member → design card (forces, φMn/φPn, utilization, rebar once
+    #9c lands, cross-section render from the Section Designer)
+  - Storey/grid isolation + failure highlighting driven by compliance results
+- **Customer mode (confidence view)**:
+  - Doll-house orbit, room/wall colors, roof; no forces, no jargon
+  - Traffic-light summary: structure safe ✓ · cost · carbon
+  - Shareable glTF link / QR code on the SBC package cover sheet linking to
+    the model viewer
+- **OSS adoption (verified)**: Google `<model-viewer>` (Apache-2.0, 8.2k★)
+  for the shareable/AR glTF viewer; three.js (MIT) already in use stays the
+  engineering-mode renderer.
+- **Files to change**: `frontend/app/src/views/VisualizationWorkspace.jsx`,
+  `backend/app/services/building_scene.py` (deformed shape + diagram
+  geometry into the scene graph), `frontend` viewer component (NEW),
+  `backend/app/services/sbc304_report.py` (QR on cover sheet).
+- **Effort**: 1–1.5 weeks
+
+---
+
 ## Phase 5: Future (Week 15+)
 
 ### #22: Design Version Control (Git for structures)
@@ -842,18 +900,25 @@ This document connects each roadmap item (1-25) to:
 | 0 | 1-4 | BlogWorkspace.jsx, useProjectId.jsx, core/units.py | 1 week |
 | 1 | 5-8 | bim_service.py, PlanViewer.jsx, collaboration.py | 2-3 weeks |
 | 2 | 9-12 | concrete_design.py, compliance_engine.py, carbon_calculator.py | 3 weeks |
-| **3** | **13-18** | **exporters.py, governance.py, submission PDF template** | **3-4 weeks** |
-| 4 | 19-21 | ai_provider.py, GenerativeDesignWorkspace.jsx, ecosystem.py | 3-4 weeks |
+| **3** | **13-18** | **exporters.py, governance.py, submission PDF template** | **✅ code-complete (#13 = continuous calibration)** |
+| **3.5** | **#26-30 (integration) · #9a ✅** | exporters branding, subscriptions enforcement, collaboration.py, load_combinations.py | 1-2 weeks |
+| 4 | 19-21, 31 | ai_provider.py, GenerativeDesignWorkspace.jsx, ecosystem.py, building_scene.py | 3-4 weeks |
 | 5 | 22-25 | (future, no code yet) | ? |
 
 ---
 
 ## 🎯 What to Do Next (Right Now)
 
-1. **Confirm you have #13** (3 real SBC 304 PDFs from engineers) — this is your blocker
-2. **Start #15** (PDF template building) — 3-day sprint
-3. **Then #16-18** (tracking + exports) — wraps up Phase 3
-
-Once Phase 3 is **working and used by real engineers**, Phases 4-5 become possible.
+1. **✅ #15–18 shipped** (package, tracking, DOCX, Excel) — Phase 3 is
+   code-complete; #13 (template calibration) is continuous via real
+   submissions, not a blocker.
+2. **Engineering-upgrade sprint (#9a–#9f)** — #9a load combinations ✅ DONE;
+   next: #9b punching shear, #9c real bar selection (kills
+   `rho_provided_assumed`), #9d shear/detailing, #9e wind/seismic.
+3. **Integration sprint (#26–30)** — white-label → exporters, entitlement
+   enforcement, lifecycle webhooks, collaboration↔governance review flow.
+4. **Then Phase 4** — #31 3D dual-mode viewer, #19 Arabic NLP, #20 slider,
+   #21 marketplace data (matching groundwork lands with the integration
+   sprint).
 
 **Questions?**
