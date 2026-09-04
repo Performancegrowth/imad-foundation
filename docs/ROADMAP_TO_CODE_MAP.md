@@ -189,7 +189,7 @@ This document connects each roadmap item (1-25) to:
 
 ## Phase 2: Core Engineering (Week 4-6)
 
-### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a + #9b DONE)
+### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a + #9b + #9c DONE)
 - **Sprints touched**: 5, 10
 - **Implemented (#9a — load-combination engine)**: new
   `backend/app/services/load_combinations.py` — SBC 301 (ACI 318-19 §5.3)
@@ -210,11 +210,30 @@ This document connects each roadmap item (1-25) to:
   `anaStruct` is LGPL-3.0 + 2D-only (arm's-length cross-check only, not a
   dependency); `PyNite`'s PyPI name is squatted by a Fortnite wrapper — avoid.
 - **Remaining sub-items**:
-  - **#9c** — real bar selection from design feeding compliance (kill
-    `rho_provided_assumed`)
   - **#9d** — beam/column shear design + development length + detailing
   - **#9e** — wind (SBC 301 ch. 26–31) + full ELF with site class + drift
   - **#9f** — adopt `structuralcodes` as cross-check for section formulas
+- **Implemented (#9c — real bar selection kills the assumed values)**:
+  `concrete_design.round_up_to_bar_layout()` picks a deterministic real cage
+  from the rebar catalogue (`BAR_AREA_MM2`/`BAR_KG_PER_M`, BS 4449 diameters
+  matching the BBS generator): beams get minimum-Ø single-layer layouts that
+  fit the plan's real beam width (cover+gap math) with an honest
+  double-layer fallback; columns get even corner-symmetric counts (4–16)
+  with the §10.6.1.1 1% minimum enforced. `_design_beams`/`_design_columns`
+  now size from the plan's real sections (width_mm/depth_mm/section_mm) at
+  the #9a factored demands and stamp every entry with
+  bars/Ø/arrangement/as_provided_mm2/as_required_mm2/rho_provided.
+  `compliance_engine.check_beam_reinforcement()`/`check_column_reinforcement()`
+  verify those real cages (source: "design pass (roadmap #9c)") and only
+  fall back to the assumed ratio when no design is attached;
+  `rho_provided_assumed` no longer appears in any design-fed path.
+  `preliminary_boq(..., design=...)` computes rebar kg from the real
+  layouts (`rebar_source: "real bar layouts (roadmap #9c)"`), and the
+  engine wires design+boq together in one analyze() call. Tests:
+  `backend/tests/test_concrete_bars.py` (10 — area/width-fit/determinism,
+  real-plan-sections, 1% column steel, compliance real-vs-assumed both
+  paths, BOQ real-vs-assumed, end-to-end engine wiring). Full suite:
+  91 passed.
 - **Implemented (#9b — punching shear + §22.4 capacity fix)**:
   `compliance_engine.check_punching_shear()` — SBC 304 §22.6 / ACI 318-19
   §22.6.5.2, φ=0.75, Vc = least of the three expressions on the interior
@@ -229,9 +248,6 @@ This document connects each roadmap item (1-25) to:
   edge-warn for §22.6, factored-demand + legacy fallback for §22.4, runner
   integration). Full suite: 81 passed.
 - **Current state**:
-  - ACI 318 hardcoded in `backend/app/services/concrete_design.py`
-  - SBC 304 hardcoded in `backend/app/services/compliance_engine.py`
-  - No abstraction for swappable codes
   - ACI 318 hardcoded in `backend/app/services/concrete_design.py`
   - SBC 304 hardcoded in `backend/app/services/compliance_engine.py`
   - No abstraction for swappable codes

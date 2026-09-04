@@ -221,7 +221,7 @@ class OpenSeesEngine(StructuralEngine):
             "overturning_moment_kNm": round(base_shear * stories * floor_h / 1.5, 2),
         }
 
-        design = concrete_design(forces, materials=plan.materials)
+        design = concrete_design(forces, materials=plan.materials, plan=plan)
 
         # Carry the design code identity and the φ factors actually used
         # (from CODE_PARAMS) into the result, with clause references, so the
@@ -253,7 +253,8 @@ class OpenSeesEngine(StructuralEngine):
             },
         ]
 
-        boq = preliminary_boq(plan, forces, materials=plan.materials)
+        boq = preliminary_boq(plan, forces, materials=plan.materials,
+                              design=design)
 
         return AnalysisResult(
             run_id=f"run-{datetime.now().strftime('%H%M%S')}",

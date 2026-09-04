@@ -18,6 +18,73 @@ log = logging.getLogger("imad.concrete_design")
 DEFAULT_FC_MPA = 30.0  # C30 concrete
 DEFAULT_FY_MPA = 420.0  # A615 rebar (Saudi standard)
 
+# ---- rebar catalogue (roadmap #9c) -----------------------------------------
+# Nominal areas and unit weights per BS 4449 / ACI — same diameters used by the
+# BBS generator (boq_generator.BAR_KG_PER_M), so bars selected here can feed
+# compliance AND the rebar take-off directly (no more assumed 0.8 % / 100 kg/m³).
+BAR_AREA_MM2 = {
+    8: 50.3, 10: 78.5, 12: 113.1, 14: 153.9, 16: 201.1, 18: 254.5,
+    20: 314.2, 22: 380.1, 25: 490.9, 28: 615.8,
+}
+BAR_KG_PER_M = {
+    8: 0.395, 10: 0.617, 12: 0.888, 14: 1.208, 16: 1.578, 18: 1.998,
+    20: 2.466, 22: 2.984, 25: 3.854, 28: 4.834,
+}
+_BEAM_DIA = (16, 18, 20, 22, 25)        # longitudinal beam bars
+_COLUMN_DIA = (16, 18, 20, 22, 25)     # longitudinal column bars
+COLUMN_COUNTS = (4, 6, 8, 12, 16)      # even, corner-symmetric layouts
+COVER_MM = 40.0                        # clear cover (beams/columns)
+TIE_MM = 10.0                          # stirrup/hoop Ø
+
+
+def round_up_to_bar_layout(as_required_mm2: float, *, b_mm: float,
+                           min_dia: int = 16, max_dia: int = 25,
+                           kind: str = "beam",
+                           min_gap_mm: float = 25.0) -> Dict[str, Any]:
+    """Select a deterministic bar layout whose As ≥ As_required.
+
+    Beams: single layer, minimum bar Ø and count / spacing depth-first —
+    the first (dia, n) that satisfies both area and fit-in-width wins, so the
+    output is reproducible and economical. Columns: even, corner-symmetric
+    counts (4–16) so the selection is a real distributable cage.
+    """
+    if kind == "beam":
+        diameters = [d for d in _BEAM_DIA if min_dia <= d <= max_dia]
+    else:
+        diameters = [d for d in _COLUMN_DIA if min_dia <= d <= max_dia]
+    cover = COVER_MM + (TIE_MM if kind == "beam" else 0.0)
+    for dia in diameters:
+        a_bar = BAR_AREA_MM2[dia]
+        n_min = max(2, math.ceil(as_required_mm2 / a_bar)) if as_required_mm2 > 0 else 2
+        if kind == "column":
+            # Clamp to a valid even symmetric count.
+            n = next((c for c in COLUMN_COUNTS
+                      if c * a_bar >= as_required_mm2), COLUMN_COUNTS[-1])
+            return {
+                "bars": n, "bar_diameter_mm": dia,
+                "as_provided_mm2": round(n * a_bar, 2),
+                "arrangement": f"{n}Ø{dia}",
+                "kind": "column",
+            }
+        # beams: try n bars on one layer until they fit with 25 mm gaps.
+        cover = COVER_MM + TIE_MM
+        for n in range(n_min, 9):
+            need_width = 2 * cover + (n * dia) + (n - 1) * min_gap_mm
+            if need_width <= b_mm:
+                return {"bars": n, "bar_diameter_mm": dia,
+                        "as_provided_mm2": round(n * a_bar, 2),
+                        "arrangement": f"{n}Ø{dia}",
+                        "kind": "beam",
+                        "fits_one_layer": True}
+    # No single-layer fit — two-layer fallback (common real-world outcome).
+    dia = diameters[-1]
+    n = max(2, math.ceil(as_required_mm2 / BAR_AREA_MM2[dia]))
+    return {"bars": n, "bar_diameter_mm": dia,
+            "as_provided_mm2": round(n * BAR_AREA_MM2[dia], 2),
+            "arrangement": f"{n}Ø{dia} (double layer)",
+            "kind": "beam",
+            "fits_one_layer": False}
+
 # Code-specific factors
 CODE_PARAMS = {
     "ACI 318-19": {
@@ -68,18 +135,23 @@ class ConcreteDesigner:
         self.fc = fc_mpa or DEFAULT_FC_MPA
         self.fy = fy_mpa or DEFAULT_FY_MPA
     
-    def design(self, forces: List[MemberForce]) -> Dict[str, Any]:
-        """Run design checks for all members."""
-        columns = [f for f in forces if f.kind == "column"]
-        beams = [f for f in forces if f.kind == "beam"]
-        
-        column_checks = self._design_columns(columns)
-        beam_checks = self._design_beams(beams)
-        
+    def design(self, forces: List[MemberForce],
+               plan: Optional[PlanData] = None) -> Dict[str, Any]:
+        """Run design checks for all members.
+
+        ``plan`` supplies real section geometry (column size_m, beam
+        width_m/depth_m); without it, code-neutral defaults are used so the
+        direct call remains deterministic and backward-compatible.
+        """
+        column_checks = self._design_columns(
+            [f for f in forces if f.kind == "column"], plan=plan)
+        beam_checks = self._design_beams(
+            [f for f in forces if f.kind == "beam"], plan=plan)
+
         max_util = 0.0
         for entry in column_checks + beam_checks:
             max_util = max(max_util, entry.get("utilization", 0.0))
-        
+
         return {
             "code_standard": self.code_standard,
             "code_name": self.code_params["name"],
@@ -91,68 +163,94 @@ class ConcreteDesigner:
             "status": "acceptable" if max_util <= 1.0 else "needs_reinforcement",
         }
     
-    def _design_columns(self, columns: List[MemberForce]) -> List[Dict[str, Any]]:
-        """Design columns per code."""
+
+    def _design_columns(self, columns: List[MemberForce],
+                        plan: Optional[PlanData] = None) -> List[Dict[str, Any]]:
+        """Design columns per code - real section size + real bar cage (#9c)."""
         phi = self.code_params["phi_axial"]
+        plan_cols = {c.id: c for c in (plan.columns if plan else [])}
         checks: List[Dict[str, Any]] = []
-        
+
         for col in columns:
-            P = max(col.axial_kN * 1000 or 0.0, 0.0)  # kN → N
-            size = 0.30  # default column size (from plan)
-            Ag = (size * 1000) ** 2  # mm²
-            
-            # Per ACI/SBC §10.6: φPn = φ · [0.85f'c(Ag - Ast) + fy·Ast]
-            rho_min = self.code_params["rho_min_formula"](self.fc)
-            As_min = rho_min * Ag
-            
-            phi_pn = phi * (0.85 * self.fc * (Ag - As_min) + self.fy * As_min)
-            utilization = P / max(phi_pn, 1e-6)
-            
+            pu_n = max(float(col.axial_kN or 0.0) * 1000.0, 0.0)
+            pc = plan_cols.get(col.element_id)
+            size_mm = (pc.size_m * 1000) if pc else 300.0
+            Ag = size_mm ** 2
+
+            # SBC 304 10.6.1.1: 1% <= rho_col <= 8%
+            rho_min_col = max(self.code_params["rho_min_formula"](self.fc), 0.01)
+            As_min = rho_min_col * Ag
+            ast_req = (pu_n / max(phi * 0.80, 1e-6) - 0.85 * self.fc * Ag) / \
+                max(self.fy - 0.85 * self.fc, 1e-6)
+            ast_req = min(max(ast_req, As_min), 0.08 * Ag)
+
+            layout = round_up_to_bar_layout(ast_req, b_mm=size_mm, kind="column")
+            ast = layout["as_provided_mm2"]
+            phi_pn = phi * 0.80 * (0.85 * self.fc * (Ag - ast) + self.fy * ast)
+            utilization = pu_n / max(phi_pn, 1e-6)
+
             checks.append({
                 "element": col.element_id,
-                "axial_kN": col.axial_kN,
-                "ag_mm2": int(Ag),
+                "axial_kN": round(float(col.axial_kN or 0.0), 2),
+                "section_mm": int(size_mm), "ag_mm2": int(Ag),
                 "phi_pn_kN": round(phi_pn / 1000, 2),
-                "as_required_mm2": int(As_min),
+                "as_required_mm2": int(round(ast_req)),
+                "as_min_mm2": int(round(As_min)),
+                "bars": layout["bars"],
+                "bar_diameter_mm": layout["bar_diameter_mm"],
+                "as_provided_mm2": layout["as_provided_mm2"],
+                "arrangement": layout["arrangement"],
+                "rho_provided": round(ast / Ag, 5),
                 "utilization": round(utilization, 2),
                 "code": self.code_standard,
             })
-        
+
         return checks
-    
-    def _design_beams(self, beams: List[MemberForce]) -> List[Dict[str, Any]]:
-        """Design beams per code."""
+
+    def _design_beams(self, beams: List[MemberForce],
+                      plan: Optional[PlanData] = None) -> List[Dict[str, Any]]:
+        """Design beams using real plan sections and a real bar layout (#9c)."""
         phi = self.code_params["phi_flexure"]
+        plan_beams = {bm.id: bm for bm in (plan.beams if plan else [])}
         checks: List[Dict[str, Any]] = []
-        
+
         for beam in beams:
-            Mu = max(beam.moment_kNm * 1e6 or 0.0, 0.0)  # kNm → Nmm
-            b, d = 300.0, 450.0  # width & effective depth (mm)
-            
-            # Iteratively solve for As
+            Mu = max(float(beam.moment_kNm or 0.0) * 1e6, 0.0)
+            pb = plan_beams.get(beam.element_id)
+            b_mm = (pb.width_m * 1000) if pb else 300.0
+            h_mm = (pb.depth_m * 1000) if pb else 450.0
+            d_guess = h_mm - COVER_MM - TIE_MM - 10.0
+            as_req = self._solve_beam_steel(phi, Mu, b_mm, d_guess)
             rho_min = self.code_params["rho_min_formula"](self.fc)
-            As_min = rho_min * b * d
-            
-            # Simplified: Mu = phi * As * fy * (d - a/2), a = As*fy/(0.85*fc*b)
-            As = self._solve_beam_steel(phi, Mu, b, d)
-            As = max(As, As_min)
-            
-            a = As * self.fy / (0.85 * self.fc * b)
-            phi_mn = phi * As * self.fy * (d - a / 2)
+            as_min = rho_min * b_mm * d_guess
+            as_req = max(as_req, as_min)
+
+            layout = round_up_to_bar_layout(as_req, b_mm=b_mm, kind="beam")
+            d_act = h_mm - COVER_MM - TIE_MM - layout["bar_diameter_mm"] / 2.0
+            a = layout["as_provided_mm2"] * self.fy / (0.85 * self.fc * b_mm)
+            phi_mn = phi * layout["as_provided_mm2"] * self.fy * (d_act - a / 2.0)
             utilization = Mu / max(phi_mn, 1e-6)
-            
+
             checks.append({
                 "element": beam.element_id,
-                "moment_kNm": beam.moment_kNm,
-                "as_required_mm2": int(As),
-                "as_min_mm2": int(As_min),
+                "moment_kNm": round(float(beam.moment_kNm or 0.0), 2),
+                "width_mm": int(b_mm), "depth_mm": int(h_mm),
+                "d_eff_mm": round(d_act, 1),
+                "as_required_mm2": int(round(as_req)),
+                "as_min_mm2": int(round(as_min)),
+                "bars": layout["bars"],
+                "bar_diameter_mm": layout["bar_diameter_mm"],
+                "as_provided_mm2": layout["as_provided_mm2"],
+                "arrangement": layout["arrangement"],
+                "fits_one_layer": layout.get("fits_one_layer", True),
+                "rho_provided": round(layout["as_provided_mm2"] / (b_mm * d_act), 5),
                 "phi_mn_kNm": round(phi_mn / 1e6, 2),
                 "utilization": round(utilization, 2),
                 "code": self.code_standard,
             })
-        
+
         return checks
-    
+
     def _solve_beam_steel(self, phi: float, mu: float, b: float, d: float) -> float:
         """Solve for required steel area via closed-form solution."""
         jd = 0.9 * d
@@ -162,7 +260,8 @@ class ConcreteDesigner:
 
 
 def concrete_design(forces: List[MemberForce], materials: Dict[str, Any],
-                   code_standard: str = "ACI 318-19") -> Dict[str, Any]:
+                   code_standard: str = "ACI 318-19",
+                   plan: Optional[PlanData] = None) -> Dict[str, Any]:
     """Legacy interface: design with code selection.
     
     Args:
@@ -177,11 +276,12 @@ def concrete_design(forces: List[MemberForce], materials: Dict[str, Any],
     fy = float(materials.get("steel_yield_mpa", DEFAULT_FY_MPA) or DEFAULT_FY_MPA)
     
     designer = ConcreteDesigner(code_standard=code_standard, fc_mpa=fc, fy_mpa=fy)
-    return designer.design(forces)
+    return designer.design(forces, plan=plan)
 
 
 def preliminary_boq(plan: PlanData, forces: List[MemberForce],
-                   materials: Dict[str, Any]) -> Dict[str, Any]:
+                   materials: Dict[str, Any],
+                   design: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Estimate quantities for a preliminary BOQ (no detailed sizing)."""
     stories = max(1, plan.stories)
     
@@ -200,9 +300,29 @@ def preliminary_boq(plan: PlanData, forces: List[MemberForce],
         beam_vol += beam.width_m * beam.depth_m * length
     
     total_concrete = slab_vol + col_vol + beam_vol
-    steel_kg_per_m3 = 100.0  # typical reinforcement ratio
-    steel_tonnes = total_concrete * steel_kg_per_m3 / 1000.0
-    rebar_kg = total_concrete * steel_kg_per_m3
+
+    # Rebar take-off (roadmap #9c): when the design pass supplied real bar
+    # layouts, weight = bars x member length x unit weight; otherwise fall
+    # back to the historical 100 kg/m3 ratio and say so.
+    rebar_kg = 0.0
+    rebar_source = "assumed 100 kg/m3 ratio (no design attached)"
+    if design:
+        lengths: Dict[str, float] = {}
+        for c in plan.columns:
+            lengths[c.id] = c.height * stories
+        for bm in plan.beams:
+            lengths[bm.id] = math.hypot(bm.x2 - bm.x1, bm.y2 - bm.y1) * stories
+        for group in ("columns", "beams"):
+            for entry in design.get(group, []) or []:
+                ln = lengths.get(entry.get("element"))
+                if ln:
+                    rebar_kg += entry.get("bars", 0) * ln * BAR_KG_PER_M.get(
+                        entry.get("bar_diameter_mm", 20), 2.466)
+        if rebar_kg > 0:
+            rebar_source = "real bar layouts (roadmap #9c)"
+    if rebar_kg <= 0:
+        rebar_kg = total_concrete * 100.0
+    steel_tonnes = rebar_kg / 1000.0
     
     return {
         "concrete_m3": round(total_concrete, 2),
@@ -211,6 +331,7 @@ def preliminary_boq(plan: PlanData, forces: List[MemberForce],
         "beams_m3": round(beam_vol, 2),
         "rebar_kg": round(rebar_kg, 2),
         "rebar_tonnes": round(steel_tonnes, 2),
+        "rebar_source": rebar_source,
         "footprint_m2": round(slab_area, 2),
         "units": "m³ (concrete), t (steel)",
     }

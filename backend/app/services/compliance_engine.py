@@ -58,19 +58,40 @@ class ComplianceEngine:
         }
 
     def check_beam_reinforcement(self) -> Dict[str, Any]:
-        # ρ_min = max(0.25√f'c, 1.4)/fy — C30: 0.25·√30 = 1.37 < 1.4 → 1.4 governs
+        """§9.6.1.2 minimum flexural reinforcement — verified against the REAL
+        bar layout selected by the #9c design pass when an analysis is
+        attached; falls back to the detailing assumption otherwise."""
         rho_min = 1.4 / 420.0
-        assumed_rho = 0.008                            # detailing basis of the BBS
+        base = {"clause": "SBC 304 §9.6.1.2 (ACI 318-19 §9.6.1.2)",
+                "rho_min": round(rho_min, 5)}
+        design_beams = ((self.analysis.get("design") or {}).get("beams")) or []
+        if design_beams:
+            gov = max(design_beams,
+                      key=lambda b: float(b.get("as_required_mm2") or 0.0))
+            rho = float(gov.get("rho_provided") or 0.0)
+            ok = rho >= rho_min
+            return {
+                "check_name": "Minimum beam flexural reinforcement (§9.6.1.2)",
+                "status": "pass" if ok else "fail",
+                "details": {**base,
+                            "rho_provided": round(rho, 5),
+                            "governing_beam": gov.get("element"),
+                            "bar_layout": gov.get("arrangement"),
+                            "bars": f"{gov.get('bars')}Ø{gov.get('bar_diameter_mm')}",
+                            "as_provided_mm2": gov.get("as_provided_mm2"),
+                            "as_required_mm2": gov.get("as_required_mm2"),
+                            "source": "design pass (roadmap #9c)",
+                            "note": "Verified against the actual selected bars."},
+            }
+        assumed_rho = 0.008                            # detailing basis fallback
         ok = assumed_rho >= rho_min
         return {
             "check_name": "Minimum beam flexural reinforcement (§9.6.1.2)",
             "status": "pass" if ok else "fail",
-            "details": {
-                "clause": "SBC 304 §9.6.1.2 (ACI 318-19 §9.6.1.2)",
-                "rho_min": round(rho_min, 5),
-                "rho_provided_assumed": assumed_rho,
-                "note": "Derived from the BBS longitudinal bar schedule.",
-            },
+            "details": {**base,
+                        "rho_provided_assumed": assumed_rho,
+                        "source": "assumed (no design attached)",
+                        "note": "Run analysis to verify against real bars."},
         }
 
     def check_deflection(self) -> Dict[str, Any]:
@@ -95,6 +116,32 @@ class ComplianceEngine:
         }
 
     def check_column_reinforcement(self) -> Dict[str, Any]:
+        """§10.6.1.1 1 % ≤ ρ ≤ 8 % — verified against the real cages selected
+        by the #9c design pass; falls back to the 4Ø18 detailing assumption."""
+        base = {"clause": "SBC 304 §10.6.1.1", "allowed_range_pct": [1.0, 8.0]}
+        design_cols = ((self.analysis.get("design") or {}).get("columns")) or []
+        if design_cols:
+            rhos = [(c.get("element"), float(c.get("rho_provided") or 0.0))
+                    for c in design_cols]
+            low = min(rhos, key=lambda t: t[1])
+            high = max(rhos, key=lambda t: t[1])
+            gov = max(design_cols,
+                      key=lambda c: float(c.get("as_provided_mm2") or 0.0))
+            ok_all = all(0.01 <= r <= 0.08 for _, r in rhos)
+            status = ("pass" if ok_all
+                      else "warn" if high[1] > 0.08 * 0.9 else "fail")
+            return {
+                "check_name": "Column reinforcement limits (§10.6.1.1)",
+                "status": status,
+                "details": {**base,
+                            "rho_min_percent": round(low[1] * 100, 2),
+                            "rho_max_percent": round(high[1] * 100, 2),
+                            "governing_column": gov.get("element"),
+                            "bar_layout": gov.get("arrangement"),
+                            "bars": f"{gov.get('bars')}Ø{gov.get('bar_diameter_mm')}",
+                            "source": "design pass (roadmap #9c)",
+                            "note": "Verified against the actual selected cages."},
+            }
         # 1 % ≤ ρ ≤ 8 % per §10.6.1.1; Imad detailing uses 4Ø18 on columns.
         bars, dia_m = 4, 0.018
         size = self.plan.columns[0].size_m if self.plan.columns else 0.3
@@ -105,12 +152,12 @@ class ComplianceEngine:
         return {
             "check_name": "Column reinforcement limits (§10.6.1.1)",
             "status": "pass" if ok else ("warn" if rho > 0.08 * 0.9 else "fail"),
-            "details": {
-                "clause": "SBC 304 §10.6.1.1",
-                "rho_percent": round(rho * 100, 2),
-                "allowed_range_pct": [1.0, 8.0],
-                "column_size_m": size, "bars": f"{bars}Ø{int(dia_m * 1000)}",
-            },
+            "details": {**base,
+                        "rho_percent": round(rho * 100, 2),
+                        "column_size_m": size,
+                        "bars": f"{bars}Ø{int(dia_m * 1000)}",
+                        "source": "assumed (no design attached)",
+                        "note": "Run analysis to verify against real cages."},
         }
 
     def check_base_shear(self) -> Dict[str, Any]:

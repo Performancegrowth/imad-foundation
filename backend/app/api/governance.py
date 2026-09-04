@@ -518,6 +518,18 @@ async def submission_transition(
                      details={"submission_id": submission_id,
                               "status": body.status,
                               "reference_number": body.reference_number})
+    # First live consumer of the webhook fan-out (was dead infrastructure):
+    # notify any registered plugins/endpoints of the lifecycle event.
+    try:
+        from app.api.collaboration import fire_webhooks
+        await fire_webhooks("submission.status_changed", {
+            "submission_id": submission_id,
+            "project_id": doc.get("project_id"),
+            "status": body.status,
+            "reference_number": body.reference_number,
+        })
+    except Exception as exc:  # best-effort — never block the transition
+        log.warning("Webhook fan-out failed: %s", exc)
     return updated
 
 
