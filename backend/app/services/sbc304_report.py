@@ -884,7 +884,8 @@ def _build_member_design(
 
     summary = [["Member Type", "Count", "Max Utilization", "Status"]]
     details = [
-        ["Member Type", "Member ID", "Utilization", "Status", "Governing Check"],
+        ["Member Type", "Member ID", "Section (mm)", "Arrangement",
+         "As prov / req (mm²)", "Utilization", "Status", "Governing Check"],
     ]
 
     all_utilizations: List[float] = []
@@ -901,8 +902,18 @@ def _build_member_design(
 
             utilization = _numeric(member.get("utilization"))
             member_id = _safe_text(
-                member.get("id"), member.get("member_id"), "N/A"
+                member.get("element"), member.get("id"),
+                member.get("member_id"), "N/A"
             )
+            section_text = _member_section_text(member)
+            arrangement = _safe_text(member.get("arrangement"), "—")
+
+            as_prov = _numeric(member.get("as_provided_mm2"))
+            as_req = _numeric(member.get("as_required_mm2"))
+            if as_prov is not None and as_req is not None:
+                as_text = f"{as_prov:.0f} / {as_req:.0f}"
+            else:
+                as_text = "—"
 
             if utilization is None:
                 status = "DATA INCOMPLETE"
@@ -916,9 +927,14 @@ def _build_member_design(
             details.append([
                 member_type,
                 member_id,
+                section_text,
+                arrangement,
+                as_text,
                 utilization_text,
                 status,
-                _safe_text(member.get("governing_check"), "N/A"),
+                _safe_text(
+                    member.get("governing_check"), member.get("code"), "—"
+                ),
             ])
 
         if valid_utils:
@@ -959,14 +975,33 @@ def _build_member_design(
 
     if len(details) == 1:
         details.append([
-            "N/A",
-            "N/A",
-            "N/A",
+            "N/A", "N/A", "—", "—", "—", "N/A",
             "NO MEMBER DATA",
             "Analysis engine did not supply member results",
         ])
 
     return summary, details, max_utilization
+
+
+def _member_section_text(member: Dict[str, Any]) -> str:
+    """Present the member's real section from the design entry (or a dash).
+
+    Presentation only — geometry comes from the design engine's entry, which
+    reads the plan's real sections (#9c).
+    """
+
+    width = _numeric(member.get("width_mm"))
+    depth = _numeric(member.get("depth_mm"))
+
+    if width is not None and depth is not None:
+        return f"{width:.0f}×{depth:.0f}"
+
+    section = _numeric(member.get("section_mm"))
+
+    if section is not None:
+        return f"{section:.0f}×{section:.0f}"
+
+    return "—"
 
 
 def _utilization_status(utilization: float) -> str:

@@ -157,16 +157,30 @@ def compute_quantities(plan: PlanData,
 
 
 # ─────────────────────────────────────────────────── bar bending schedule ────
-def generate_bbs(plan: PlanData) -> List[Dict[str, Any]]:
+def generate_bbs(plan: PlanData,
+                 design: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Build a simplified but dimensioned Bar Bending Schedule.
 
-    Bars follow common RC detailing: beams get 2 top + 2 bottom longitudinal
-    bars plus Ø8 stirrups @150 mm; columns get 4 verticals with Ø8 ties
-    @200 mm; slabs use a Ø10@200 mesh both ways; footings a Ø12@200 mat.
-    Lengths include anchorage/laps (50d) and 25 mm cover.
+    When a design pass is supplied (roadmap #9c), the longitudinal bars come
+    from the designed cages (Ø / count per element) instead of the legacy
+    Ø16/Ø18 assumptions; stirrup and tie spacing follow the design's
+    detailing when present. Fallbacks preserve the legacy detailing:
+    beams 2 top + 2 bottom + Ø8 stirrups @150 mm; columns 4 verticals with
+    Ø8 ties @200 mm; slabs Ø10@200 mesh; footings Ø12@200 mat. Lengths
+    include anchorage/laps (50d) and 25 mm cover.
     """
     bars: List[Dict[str, Any]] = []
     mark = 1
+
+    design_by_element: Dict[str, Dict[str, Any]] = {}
+    if isinstance(design, dict):
+        for group in ("beams", "columns"):
+            for entry in design.get(group) or []:
+                if isinstance(entry, dict) and entry.get("element"):
+                    design_by_element[str(entry["element"])] = entry
+
+    def design_for(element_id: str) -> Dict[str, Any]:
+        return design_by_element.get(str(element_id), {})
 
     def add(element: str, shape: str, dia: int, length_m: float, qty: int,
             spacing: str = "") -> None:
@@ -184,21 +198,31 @@ def generate_bbs(plan: PlanData) -> List[Dict[str, Any]]:
         span = math.hypot(beam.x2 - beam.x1, beam.y2 - beam.y1)
         if span < 0.5:
             continue
-        eff = span - 0.05 + 50 * 0.016 / 1000 * 2      # clear + anchorages
+        d_entry = design_for(beam.id)
+        d_main = int(d_entry.get("bar_diameter_mm") or 16)
+        n_main = max(2, int(d_entry.get("bars") or 2))
+        eff = span - 0.05 + 2 * 50 * d_main / 1000     # clear + anchorages (50d)
+        stirrup_s = float(d_entry.get("stirrup_spacing_mm") or 150.0)
         for _ in range(max(1, plan.stories)):
-            add(f"Beam {beam.id}", "straight", 16, eff, 2)
-            add(f"Beam {beam.id}", "straight", 18, eff + 0.06, 2)
-            n_stirrups = max(2, int(span / 0.15))
+            add(f"Beam {beam.id}", "straight", d_main, eff, n_main)
+            add(f"Beam {beam.id}", "straight", d_main, eff + 0.06, 2)
+            n_stirrups = max(2, math.ceil(span / max(stirrup_s, 50.0) / 1000.0))
             perimeter = 2 * (beam.width_m - 0.05 + beam.depth_m - 0.05) + 0.15
-            add(f"Beam {beam.id}", "stirrup", 8, perimeter, n_stirrups, "Ø8@150")
+            add(f"Beam {beam.id}", "stirrup", 8, perimeter, n_stirrups,
+                f"Ø8@{stirrup_s:.0f}")
 
     for col in plan.columns:
-        lap = 50 * 0.018 / 1000
+        d_entry = design_for(col.id)
+        d_main = int(d_entry.get("bar_diameter_mm") or 18)
+        n_main = max(4, int(d_entry.get("bars") or 4))
+        tie_s = float(d_entry.get("tie_spacing_mm") or 200.0)
+        lap = 50 * d_main / 1000
         length = col.height * max(1, plan.stories) + lap
-        add(f"Col {col.id}", "straight", 18, length, 4)
-        n_ties = max(2, int(col.height / 0.2)) * max(1, plan.stories)
+        add(f"Col {col.id}", "straight", d_main, length, n_main)
+        n_ties = (max(2, math.ceil(col.height / max(tie_s, 50.0) / 1000.0))
+                  * max(1, plan.stories))
         tie_len = 4 * (col.size_m - 0.05) + 0.12
-        add(f"Col {col.id}", "tie", 8, tie_len, n_ties, "Ø8@200")
+        add(f"Col {col.id}", "tie", 8, tie_len, n_ties, f"Ø8@{tie_s:.0f}")
 
     b = plan.bounds()
     slab_area = max((b["max_x"] - b["min_x"]), 1.0) * max((b["max_y"] - b["min_y"]), 1.0)
@@ -287,9 +311,14 @@ def generate_boq(plan: PlanData, survey: Optional[SurveyReading] = None,
     if not bool(plan):
         raise BOQError("Plan contains no structural elements; nothing to price.")
 
+    design_pass = None
+    if analysis and isinstance(analysis.get("design"), dict):
+        design_pass = analysis["design"]
+
     items = compute_quantities(plan, survey)
-    bars = generate_bbs(plan)
+    bars = generate_bbs(plan, design=design_pass)
     cutting = optimize_cutting(bars)
+    bbs_total_kg = round(sum(bar["weight_kg"] for bar in bars), 1)
 
     # Analysis refinement: scale rebar with the governing utilization when the
     # frame was analysed (utilization near 1.00 → ratio estimate is consistent;
@@ -297,26 +326,43 @@ def generate_boq(plan: PlanData, survey: Optional[SurveyReading] = None,
     util = 0.0
     if analysis:
         try:
-            util = float((analysis.get("design") or {}).get("max_utilization") or 0.0)
+            util = float((design_pass or {}).get("max_utilization") or 0.0)
         except (TypeError, ValueError):  # pragma: no cover - defensive
             util = 0.0
-    if 0.0 < util < 1.0:
+
+    rebar_note: Optional[str] = None
+    if design_pass and bbs_total_kg > 0:
+        # Real take-off (#9c): the REBAR line IS the designed cage schedule —
+        # the same layouts compliance verified, not a ratio estimate.
+        items = [
+            {**i, "quantity": bbs_total_kg,
+             "amount_usd": round(
+                 bbs_total_kg * DEFAULT_RATES["REBAR"]["rate"], 2)}
+            if i["code"] == "REBAR" else i
+            for i in items
+        ]
+        rebar_note = (
+            f"Rebar take-off from the designed bar cages (#9c) — BBS total "
+            f"{bbs_total_kg:,.1f} kg; detailing per design pass "
+            f"(stirrup/tie spacing as designed).")
+    elif 0.0 < util < 1.0:
         ratio = max(0.85, min(1.0, util / 0.90))          # 90% utilization target
         items = [
             {**i, "quantity": round(i["quantity"] * ratio, 2),
              "amount_usd": round(i["amount_usd"] * ratio, 2)} if i["code"] == "REBAR" else i
             for i in items
         ]
+        rebar_note = (
+            f"Rebar refined from analysis utilization {util:.2f} "
+            "(target 0.90; welded detail + BBS mark-up unchanged).")
 
     total = round(sum(i["amount_usd"] for i in items), 2)
     gfa_m2 = next((i["quantity"] for i in items if i["code"] == "FORM-SLAB"), 0.0)
     rebar_kg = next((i["quantity"] for i in items if i["code"] == "REBAR"), 0.0)
 
     assumptions = list(ASSUMPTIONS)
-    if analysis:
-        assumptions.append(
-            f"Rebar refined from analysis utilization {util:.2f} "
-            "(target 0.90; welded detail + BBS mark-up unchanged).")
+    if rebar_note:
+        assumptions.append(rebar_note)
 
     b = plan.bounds()
     return {
