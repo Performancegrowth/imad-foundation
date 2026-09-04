@@ -189,7 +189,7 @@ This document connects each roadmap item (1-25) to:
 
 ## Phase 2: Core Engineering (Week 4-6)
 
-### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a DONE)
+### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a + #9b DONE)
 - **Sprints touched**: 5, 10
 - **Implemented (#9a — load-combination engine)**: new
   `backend/app/services/load_combinations.py` — SBC 301 (ACI 318-19 §5.3)
@@ -210,12 +210,24 @@ This document connects each roadmap item (1-25) to:
   `anaStruct` is LGPL-3.0 + 2D-only (arm's-length cross-check only, not a
   dependency); `PyNite`'s PyPI name is squatted by a Fortnite wrapper — avoid.
 - **Remaining sub-items**:
-  - **#9b** — punching shear check at slab–column joints (§8.5 / ACI 22.6)
   - **#9c** — real bar selection from design feeding compliance (kill
     `rho_provided_assumed`)
   - **#9d** — beam/column shear design + development length + detailing
   - **#9e** — wind (SBC 301 ch. 26–31) + full ELF with site class + drift
   - **#9f** — adopt `structuralcodes` as cross-check for section formulas
+- **Implemented (#9b — punching shear + §22.4 capacity fix)**:
+  `compliance_engine.check_punching_shear()` — SBC 304 §22.6 / ACI 318-19
+  §22.6.5.2, φ=0.75, Vc = least of the three expressions on the interior
+  critical perimeter at d/2 from the column face (edge-adjacent governing
+  joints warn for engineer verification); Vu is the factored column axial
+  demand from the #9a envelope, and every joint row carries its governing
+  combo. Both §22.6 and §22.4 now read `analysis.member_forces` via
+  `_column_axial_demands()` (with a legacy `column_axials_kn` fallback) —
+  the old §22.4 read an orphaned key that nothing populated (always warn),
+  and its demand/φPn unit split (kN vs N) silently passed everything; both
+  fixed. Tests: `backend/tests/test_compliance_engine.py` (10 — pass/fail/
+  edge-warn for §22.6, factored-demand + legacy fallback for §22.4, runner
+  integration). Full suite: 81 passed.
 - **Current state**:
   - ACI 318 hardcoded in `backend/app/services/concrete_design.py`
   - SBC 304 hardcoded in `backend/app/services/compliance_engine.py`
@@ -912,9 +924,9 @@ This document connects each roadmap item (1-25) to:
 1. **✅ #15–18 shipped** (package, tracking, DOCX, Excel) — Phase 3 is
    code-complete; #13 (template calibration) is continuous via real
    submissions, not a blocker.
-2. **Engineering-upgrade sprint (#9a–#9f)** — #9a load combinations ✅ DONE;
-   next: #9b punching shear, #9c real bar selection (kills
-   `rho_provided_assumed`), #9d shear/detailing, #9e wind/seismic.
+2. **Engineering-upgrade sprint (#9a–#9f)** — #9a load combos ✅, #9b
+   punching + §22.4 fix ✅; next: **#9c** real bar selection (kills
+   `rho_provided_assumed`), then #9d shear/detailing, #9e wind/seismic.
 3. **Integration sprint (#26–30)** — white-label → exporters, entitlement
    enforcement, lifecycle webhooks, collaboration↔governance review flow.
 4. **Then Phase 4** — #31 3D dual-mode viewer, #19 Arabic NLP, #20 slider,
