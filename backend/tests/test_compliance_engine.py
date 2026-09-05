@@ -142,11 +142,13 @@ def test_run_all_includes_punching_and_capacity():
     names = [c["check_name"] for c in report["checks"]]
     assert any("Punching" in n for n in names)
     assert any("§22.4" in n for n in names)
-    assert len(report["checks"]) == 7
+    assert any("shear strength" in n.lower() for n in names)       # roadmap #9d
+    assert any("development length" in n.lower() for n in names)   # roadmap #9d
+    assert len(report["checks"]) == 9
     assert report["summary"]["passed"] >= 0      # deterministic, no exception
 
 
 def test_run_all_handles_empty_analysis_gracefully():
     report = ComplianceEngine(PlanData(**_PLAN)).run_all()
     assert report["overall_status"] in ("pass", "warn", "fail")
-    assert len(report["checks"]) == 7
+    assert len(report["checks"]) == 9

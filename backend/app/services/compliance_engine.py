@@ -15,6 +15,9 @@ Checked clauses (preliminary-design scope):
 * §22.4     column axial capacity φPn vs demand (reads the #9a factored
             envelope from analysis member_forces)
 * §22.6     two-way (punching) shear at slab–column connections (roadmap #9b)
+* §22.5     one-way (beam) shear strength vs the real stirrup layout —
+            φVn ≥ Vu, stirrup spacing from the factored envelope (roadmap #9d)
+* §25.4.2   tension development length ld vs available embedment (roadmap #9d)
 """
 from __future__ import annotations
 
@@ -318,6 +321,100 @@ class ComplianceEngine:
             },
         }
 
+    def check_shear_design(self) -> Dict[str, Any]:
+        """One-way (beam) shear strength — §22.5: φVn ≥ Vu against the REAL
+        stirrup layout from the #9d design pass (stirrup spacing driven by the
+        factored Vu, not the fixed Ø8@150/200). Warns when no design is
+        attached so the basis is never silently assumed."""
+        base = {"clause": "SBC 304 §22.5 (ACI 318-19 §22.5.1.1, §9.6.3, §9.7.6.4)",
+                "phi": 0.75}
+        design_beams = ((self.analysis.get("design") or {}).get("beams")) or []
+        if not design_beams:
+            return {"check_name": "Beam shear strength (§22.5)",
+                    "status": "warn",
+                    "details": {**base,
+                                "note": "Run analysis to verify stirrups against "
+                                        "the real Vu."}}
+        rated = [(b, (float(b.get("shear_kN") or 0.0) /
+                      max(float(b.get("phi_vn_kn") or 0.0), 1e-6)))
+                 for b in design_beams if b.get("phi_vn_kn")]
+        if not rated:
+            return {"check_name": "Beam shear strength (§22.5)",
+                    "status": "warn",
+                    "details": {**base,
+                                "note": "Design pass present but no shear "
+                                        "fields (old design)."}}
+        gov, ratio = max(rated, key=lambda t: t[1])
+        status = ("pass" if ratio <= 1.0
+                  else "warn" if ratio <= 1.1 else "fail")
+        return {
+            "check_name": "Beam shear strength (§22.5)",
+            "status": status,
+            "details": {**base,
+                        "governing_beam": gov.get("element"),
+                        "vu_kn": round(float(gov.get("shear_kN") or 0.0), 2),
+                        "phi_vn_kn": gov.get("phi_vn_kn"),
+                        "phi_vc_kn": gov.get("phi_vc_kn"),
+                        "vs_required_kn": gov.get("vs_required_kn"),
+                        "stirrups": gov.get("stirrups"),
+                        "stirrup_spacing_mm": gov.get("stirrup_spacing_mm"),
+                        "utilization": round(ratio, 3),
+                        "source": "design pass (roadmap #9d)",
+                        "note": "Stirrup spacing from factored Vu — minimum "
+                                "§9.6.3 Av, spacing capping §9.7.6.4."},
+        }
+
+    def check_dev_length(self) -> Dict[str, Any]:
+        """Tension development length — §25.4.2: ld from the #9d design pass
+        must fit within the member's available embedment (clear span minus end
+        cover). (cb+Ktr)/db = 1.0 — no transverse-steel credit (conservative)."""
+        base = {"clause": "SBC 304 §25.4.2 (ACI 318-19 §25.4.2.4)"}
+        design_beams = ((self.analysis.get("design") or {}).get("beams")) or []
+        if not design_beams:
+            return {"check_name": "Development length (§25.4.2)",
+                    "status": "warn",
+                    "details": {**base,
+                                "note": "Run analysis to verify ld against "
+                                        "real bars."}}
+        end_cover_mm = 50.0
+        rows: List[Dict[str, Any]] = []
+        for b in design_beams:
+            ld = float(b.get("ld_mm") or 0.0)
+            if ld <= 0:
+                continue
+            eid = b.get("element")
+            length_m = 6.0
+            for bm in self.plan.beams:
+                if bm.id == eid:
+                    length_m = math.hypot(bm.x2 - bm.x1, bm.y2 - bm.y1)
+                    break
+            rows.append({"element": eid,
+                         "ld_mm": round(ld, 1),
+                         "available_mm": round(length_m * 1000.0 - 2.0 * end_cover_mm, 0),
+                         "bar_dia_mm": b.get("bar_diameter_mm"),
+                         "ok": ld <= length_m * 1000.0 - 2.0 * end_cover_mm})
+        if not rows:
+            return {"check_name": "Development length (§25.4.2)",
+                    "status": "warn",
+                    "details": {**base,
+                                "note": "Design pass present but no ld fields "
+                                        "(old design)."}}
+        worst = max(rows, key=lambda r: r["ld_mm"])
+        ok_all = all(r["ok"] for r in rows)
+        return {
+            "check_name": "Development length (§25.4.2)",
+            "status": "pass" if ok_all else "fail",
+            "details": {**base,
+                        "governing_beam": worst["element"],
+                        "ld_required_mm": worst["ld_mm"],
+                        "available_mm": worst["available_mm"],
+                        "bar_dia_mm": worst["bar_dia_mm"],
+                        "source": "design pass (roadmap #9d)",
+                        "note": "ld per §25.4.2.4, (cb+Ktr)/db = 1.0 "
+                                "(no transverse-steel credit), 300 mm floor "
+                                "§25.4.2.1; 50 mm end cover."},
+        }
+
     # ── runner ────────────────────────────────────────────────────────────────
     def run_all(self) -> Dict[str, Any]:
         checks: List[Dict[str, Any]] = [
@@ -328,6 +425,8 @@ class ComplianceEngine:
             self.check_base_shear(),
             self.check_column_capacity(),
             self.check_punching_shear(),
+            self.check_shear_design(),
+            self.check_dev_length(),
         ]
         passed = sum(1 for c in checks if c["status"] == "pass")
         warned = sum(1 for c in checks if c["status"] == "warn")

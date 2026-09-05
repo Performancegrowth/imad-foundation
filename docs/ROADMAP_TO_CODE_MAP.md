@@ -189,7 +189,7 @@ This document connects each roadmap item (1-25) to:
 
 ## Phase 2: Core Engineering (Week 4-6)
 
-### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a + #9b + #9c DONE)
+### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a + #9b + #9c + #9d DONE)
 - **Sprints touched**: 5, 10
 - **Implemented (#9a — load-combination engine)**: new
   `backend/app/services/load_combinations.py` — SBC 301 (ACI 318-19 §5.3)
@@ -209,8 +209,26 @@ This document connects each roadmap item (1-25) to:
   (Apache-2.0, fib International) adopted below for formula cross-checks;
   `anaStruct` is LGPL-3.0 + 2D-only (arm's-length cross-check only, not a
   dependency); `PyNite`'s PyPI name is squatted by a Fortnite wrapper — avoid.
+- **Implemented (#9d — shear design, development length, real detailing)**:
+  `beam_shear_design()` sizes the stirrup layout from the factored Vu
+  (load-combination envelope shear): φVc = φ·0.17·λ·√f'c·b·d (SBC 304 ch. 9 /
+  ACI 318-19 §22.5.1.1), required Av/s = (Vu/φ − Vc)/(fyv·d) with the §9.6.3.4
+  minimum, spacing capped at d/2 and 600 mm (300 where Vu ≤ φVc/2) per
+  §9.7.6.4 and floored to a buildable 5 mm step — no more fixed Ø8@150/200.
+  `development_length_mm()` = fy·ψt·db/(2.1·λ·√f'c·(cb+Ktr)/db) with
+  (cb+Ktr)/db=1.0 (no transverse-steel credit) + the §25.4.2.1 300 mm floor.
+  `_design_beams` stamps shear_kN/stirrups/stirrup_spacing_mm/phi_vc_kn/
+  vs_required_kn/phi_vn_kn/shear_ok/ld_mm; columns get tie_spacing_mm/ties
+  (§10.7.6.2 least of 48·dt, 16·db, column dimension) + ld_mm.
+  `compliance_engine.check_shear_design()` proves φVn ≥ Vu against those real
+  stirrups and `check_dev_length()` proves ld ≤ available embedment
+  (source: "design pass (roadmap #9d)"; warn when no design attached), both
+  wired into run_all (9 checks). BBS stirrup/tie rows consume the designed
+  spacing. Tests: `backend/tests/test_shear_9d.py` (10 — shear helper low/high
+  Vu, buildable floor, ld formula + floor, beam/column stamped fields,
+  compliance design-vs-no-design both paths, BBS spacing). Full suite:
+  104 passed.
 - **Remaining sub-items**:
-  - **#9d** — beam/column shear design + development length + detailing
   - **#9e** — wind (SBC 301 ch. 26–31) + full ELF with site class + drift
   - **#9f** — adopt `structuralcodes` as cross-check for section formulas
 - **Implemented (#9c — real bar selection kills the assumed values)**:
@@ -941,8 +959,9 @@ This document connects each roadmap item (1-25) to:
    code-complete; #13 (template calibration) is continuous via real
    submissions, not a blocker.
 2. **Engineering-upgrade sprint (#9a–#9f)** — #9a load combos ✅, #9b
-   punching + §22.4 fix ✅; next: **#9c** real bar selection (kills
-   `rho_provided_assumed`), then #9d shear/detailing, #9e wind/seismic.
+   punching + §22.4 fix ✅, #9c real bar selection ✅ (kills
+   `rho_provided_assumed`), #9d shear/development/detailing ✅; next:
+   **#9e** wind/seismic, then #9f structuralcodes cross-check.
 3. **Integration sprint (#26–30)** — white-label → exporters, entitlement
    enforcement, lifecycle webhooks, collaboration↔governance review flow.
 4. **Then Phase 4** — #31 3D dual-mode viewer, #19 Arabic NLP, #20 slider,

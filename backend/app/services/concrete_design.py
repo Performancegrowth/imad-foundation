@@ -85,6 +85,56 @@ def round_up_to_bar_layout(as_required_mm2: float, *, b_mm: float,
             "kind": "beam",
             "fits_one_layer": False}
 
+
+def development_length_mm(db_mm: int, fy_mpa: float, fc_mpa: float, *,
+                          psi_t: float = 1.0, lam: float = 1.0) -> float:
+    """Tension development length (mm) — ACI 318-19 §25.4.2.4 (SI units).
+
+    ld = fy·ψt·db / (2.1·λ·√f'c·((cb+Ktr)/db)), taking (cb+Ktr)/db = 1.0 —
+    no transverse-steel credit (conservative; the engineer may refine with
+    the actual cover/bar spacing). 300 mm floor per §25.4.2.1.
+    """
+    ld = fy_mpa * psi_t * db_mm / (2.1 * lam * math.sqrt(max(fc_mpa, 1.0)))
+    return max(300.0, round(ld, 1))
+
+
+def beam_shear_design(vu_kn: float, b_mm: float, d_mm: float, fc_mpa: float, *,
+                      fyv_mpa: float = 420.0, stirrup_dia_mm: int = 10,
+                      legs: int = 2) -> Dict[str, Any]:
+    """One-way shear design (strength level) — SBC 304 ch. 9 / ACI 318-19 §22.5.
+
+    φVc = φ·0.17·λ·√f'c·bw·d (SI). Stirrups: Ø10 two-legged verticals;
+    required Av/s = (Vu/φ − Vc)/(fyv·d) with the §9.6.3.4 minimum; spacing
+    capped at d/2 and 600 mm (300 mm where Vu ≤ φVc/2) per §9.7.6.4, rounded
+    down to a buildable 5 mm increment.
+    """
+    phi = 0.75
+    vu_n = max(float(vu_kn) * 1000.0, 0.0)
+    vc = 0.17 * math.sqrt(max(fc_mpa, 1.0)) * b_mm * d_mm          # N
+    phi_vc = phi * vc
+    av = legs * BAR_AREA_MM2.get(stirrup_dia_mm, 78.5)
+    av_s_min = 0.062 * math.sqrt(max(fc_mpa, 1.0)) / fyv_mpa * b_mm
+
+    if vu_n <= 0.5 * phi_vc:
+        s = min(300.0, d_mm / 2.0, 600.0)
+    else:
+        vs_req = max(vu_n / phi - vc, 0.0)
+        av_s_req = max(vs_req / (fyv_mpa * d_mm), av_s_min)
+        s = min(av / av_s_req, d_mm / 2.0, 600.0)
+    s = max(math.floor(s / 5.0) * 5.0, 40.0)
+    vs_provided = av * fyv_mpa * d_mm / s
+    phi_vn = phi * (vc + vs_provided)
+    return {
+        "vu_kn": round(vu_n / 1000.0, 1),
+        "phi_vc_kn": round(phi_vc / 1000.0, 1),
+        "vs_required_kn": round(max(vu_n / phi - vc, 0.0) / 1000.0, 1),
+        "stirrup_dia_mm": stirrup_dia_mm,
+        "stirrup_spacing_mm": s,
+        "stirrups": f"Ø{stirrup_dia_mm}@{s:.0f} ({legs}-legged)",
+        "phi_vn_kn": round(phi_vn / 1000.0, 1),
+        "ok": vu_n <= phi_vn,
+    }
+
 # Code-specific factors
 CODE_PARAMS = {
     "ACI 318-19": {
@@ -189,6 +239,11 @@ class ConcreteDesigner:
             phi_pn = phi * 0.80 * (0.85 * self.fc * (Ag - ast) + self.fy * ast)
             utilization = pu_n / max(phi_pn, 1e-6)
 
+            # Detailing (#9d): tie spacing per §10.7.6.2 (least of 48·dt,
+            # 16·db, least column dimension) + tension development length.
+            tie_s = min(48.0 * TIE_MM, 16.0 * layout["bar_diameter_mm"], size_mm)
+            ld = development_length_mm(layout["bar_diameter_mm"], self.fy, self.fc)
+
             checks.append({
                 "element": col.element_id,
                 "axial_kN": round(float(col.axial_kN or 0.0), 2),
@@ -202,6 +257,9 @@ class ConcreteDesigner:
                 "arrangement": layout["arrangement"],
                 "rho_provided": round(ast / Ag, 5),
                 "utilization": round(utilization, 2),
+                "ties": f"Ø{TIE_MM:.0f}@{tie_s:.0f}",
+                "tie_spacing_mm": round(tie_s, 1),
+                "ld_mm": ld,
                 "code": self.code_standard,
             })
 
@@ -231,9 +289,16 @@ class ConcreteDesigner:
             phi_mn = phi * layout["as_provided_mm2"] * self.fy * (d_act - a / 2.0)
             utilization = Mu / max(phi_mn, 1e-6)
 
+            # Shear design + development length (#9d): stirrup spacing from
+            # the factored Vu (load-combination envelope V), not the fixed
+            # Ø8@150/200; ld per ACI 318-19 §25.4.2.
+            sd = beam_shear_design(float(beam.shear_kN or 0.0), b_mm, d_act, self.fc)
+            ld = development_length_mm(layout["bar_diameter_mm"], self.fy, self.fc)
+
             checks.append({
                 "element": beam.element_id,
                 "moment_kNm": round(float(beam.moment_kNm or 0.0), 2),
+                "shear_kN": round(float(beam.shear_kN or 0.0), 2),
                 "width_mm": int(b_mm), "depth_mm": int(h_mm),
                 "d_eff_mm": round(d_act, 1),
                 "as_required_mm2": int(round(as_req)),
@@ -246,6 +311,14 @@ class ConcreteDesigner:
                 "rho_provided": round(layout["as_provided_mm2"] / (b_mm * d_act), 5),
                 "phi_mn_kNm": round(phi_mn / 1e6, 2),
                 "utilization": round(utilization, 2),
+                "stirrup_dia_mm": sd["stirrup_dia_mm"],
+                "stirrup_spacing_mm": sd["stirrup_spacing_mm"],
+                "stirrups": sd["stirrups"],
+                "phi_vc_kn": sd["phi_vc_kn"],
+                "vs_required_kn": sd["vs_required_kn"],
+                "phi_vn_kn": sd["phi_vn_kn"],
+                "shear_ok": sd["ok"],
+                "ld_mm": ld,
                 "code": self.code_standard,
             })
 
