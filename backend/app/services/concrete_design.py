@@ -86,6 +86,21 @@ def round_up_to_bar_layout(as_required_mm2: float, *, b_mm: float,
             "fits_one_layer": False}
 
 
+def beam_flexural_moment_capacity_knm(
+    as_mm2: float, fy_mpa: float, fc_mpa: float, b_mm: float, d_mm: float,
+    phi: float = 0.90,
+) -> float:
+    """Rectangular-section nominal flexural capacity (ACI 318-19 §22.3).
+
+    φMn = φ·As·fy·(d − a/2) with a = As·fy/(0.85·f'c·b). Exposed as a module
+    function so roadmap #9f can cross-check EXACTLY this formula against
+    structuralcodes over a section matrix.
+    """
+    a = as_mm2 * fy_mpa / (0.85 * fc_mpa * b_mm)
+    phi_mn = phi * as_mm2 * fy_mpa * (d_mm - a / 2.0)
+    return phi_mn / 1e6
+
+
 def development_length_mm(db_mm: int, fy_mpa: float, fc_mpa: float, *,
                           psi_t: float = 1.0, lam: float = 1.0) -> float:
     """Tension development length (mm) — ACI 318-19 §25.4.2.4 (SI units).
@@ -285,9 +300,9 @@ class ConcreteDesigner:
 
             layout = round_up_to_bar_layout(as_req, b_mm=b_mm, kind="beam")
             d_act = h_mm - COVER_MM - TIE_MM - layout["bar_diameter_mm"] / 2.0
-            a = layout["as_provided_mm2"] * self.fy / (0.85 * self.fc * b_mm)
-            phi_mn = phi * layout["as_provided_mm2"] * self.fy * (d_act - a / 2.0)
-            utilization = Mu / max(phi_mn, 1e-6)
+            phi_mn = beam_flexural_moment_capacity_knm(
+                layout["as_provided_mm2"], self.fy, self.fc, b_mm, d_act, phi)
+            utilization = Mu / max(phi_mn * 1e6, 1e-6)
 
             # Shear design + development length (#9d): stirrup spacing from
             # the factored Vu (load-combination envelope V), not the fixed
@@ -309,7 +324,7 @@ class ConcreteDesigner:
                 "arrangement": layout["arrangement"],
                 "fits_one_layer": layout.get("fits_one_layer", True),
                 "rho_provided": round(layout["as_provided_mm2"] / (b_mm * d_act), 5),
-                "phi_mn_kNm": round(phi_mn / 1e6, 2),
+                "phi_mn_kNm": round(phi_mn, 2),
                 "utilization": round(utilization, 2),
                 "stirrup_dia_mm": sd["stirrup_dia_mm"],
                 "stirrup_spacing_mm": sd["stirrup_spacing_mm"],

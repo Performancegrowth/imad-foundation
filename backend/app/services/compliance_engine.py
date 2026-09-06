@@ -18,6 +18,8 @@ Checked clauses (preliminary-design scope):
 * §22.5     one-way (beam) shear strength vs the real stirrup layout —
             φVn ≥ Vu, stirrup spacing from the factored envelope (roadmap #9d)
 * §25.4.2   tension development length ld vs available embedment (roadmap #9d)
+* #9f       independent cross-check of the flexure formula vs structuralcodes
+            (EC2-2004 MRd, same sections — validation, not verification)
 """
 from __future__ import annotations
 
@@ -415,6 +417,54 @@ class ComplianceEngine:
                                 "§25.4.2.1; 50 mm end cover."},
         }
 
+    def check_cross_validation(self) -> Dict[str, Any]:
+        """Roadmap #9f — independent-implementation cross-check of the section
+        flexure formula (ACI §22.3) against structuralcodes' EC2-2004 MRd on
+        the REAL cages from the design pass. This is validation (same physical
+        section under two independent code formulations) not verification."""
+        base = {"clause": ("Cross-check: ACI 318-19 §22.3 (Imad) vs "
+                           "EC2-2004 §6.1 (structuralcodes, Apache-2.0)")}
+        from app.services import cross_check
+
+        if not cross_check._structuralcodes_available():
+            return {"check_name": "Section formula cross-check (#9f)",
+                    "status": "warn",
+                    "details": {**base,
+                                "note": "structuralcodes not installed — "
+                                        "cross-check unavailable."}}
+        design_beams = ((self.analysis.get("design") or {}).get("beams")) or []
+        if design_beams:
+            repr_beams = sorted(
+                design_beams,
+                key=lambda b: float(b.get("as_provided_mm2") or 0.0),
+                reverse=True)[:5]
+            sections = [
+                (f"beam {int(b['width_mm'])}x{int(b['depth_mm'])} "
+                 f"{int(b['bars'])}O{b['bar_diameter_mm']}",
+                 float(b["width_mm"]), float(b["depth_mm"]),
+                 int(b["bars"]), int(b["bar_diameter_mm"]),
+                 float(self.analysis.get("design", {}).get(
+                     "concrete_strength_mpa") or 30.0),
+                 float(self.analysis.get("design", {}).get(
+                     "steel_yield_mpa") or 420.0))
+                for b in repr_beams
+                if b.get("width_mm") and b.get("depth_mm")
+                and b.get("bars") and b.get("bar_diameter_mm")
+            ] or None
+        else:
+            sections = None
+        report = cross_check.run_cross_check(sections=sections)
+        return {
+            "check_name": "Section formula cross-check (#9f)",
+            "status": report["status"],
+            "details": {**base,
+                        "sections": report["sections"],
+                        "band": report["band"],
+                        "method": report["method"],
+                        "library": report["library"],
+                        "note": report["note"]},
+        }
+
     # ── runner ────────────────────────────────────────────────────────────────
     def run_all(self) -> Dict[str, Any]:
         checks: List[Dict[str, Any]] = [
@@ -427,6 +477,7 @@ class ComplianceEngine:
             self.check_punching_shear(),
             self.check_shear_design(),
             self.check_dev_length(),
+            self.check_cross_validation(),
         ]
         passed = sum(1 for c in checks if c["status"] == "pass")
         warned = sum(1 for c in checks if c["status"] == "warn")

@@ -189,7 +189,7 @@ This document connects each roadmap item (1-25) to:
 
 ## Phase 2: Core Engineering (Week 4-6)
 
-### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a + #9b + #9c + #9d DONE)
+### #9: Integrate structuralcodes — full ACI/Eurocode ⚠️ PARTIAL (#9a + #9b + #9c + #9d + #9f DONE)
 - **Sprints touched**: 5, 10
 - **Implemented (#9a — load-combination engine)**: new
   `backend/app/services/load_combinations.py` — SBC 301 (ACI 318-19 §5.3)
@@ -228,9 +228,31 @@ This document connects each roadmap item (1-25) to:
   Vu, buildable floor, ld formula + floor, beam/column stamped fields,
   compliance design-vs-no-design both paths, BBS spacing). Full suite:
   104 passed.
+- **Implemented (#9f — structuralcodes cross-check of the section formulas)**:
+  `backend/app/services/cross_check.py` adopts `structuralcodes` 0.7.1
+  (fib International, Apache-2.0) as the arm's-length validation library the
+  #9a OSS verdict promised. Because structuralcodes implements EC2-2004 /
+  MC2010 — deliberately NOT ACI 318 — this is an independent-implementation
+  VALIDATION, not a line-for-line verification: the same physical section
+  (dimensions, As, f'c≈fck, fy≈fyk) computed under two independent code
+  formulations must agree inside a documented ±20 % code-difference band
+  (ACI φ-factors vs EC2 partial factors, whitney block vs parabola-rectangle).
+  `cross_check_section()` builds the EC2-2004 `BeamSection` (N/mm units,
+  marin integrator, tension bars at our real cover/d) via the factories, while
+  `run_cross_check()` sweeps the documented 5-section matrix; the compliance
+  engine's `check_cross_validation()` runs it on the REAL cages from the design
+  pass (wired into run_all — now 10 checks). Measured ratios on the default
+  matrix: 0.98–1.04 — the two implementations agree to a few percent. The ACI
+  flexure formula was extracted to `concrete_design.beam_flexural_moment_capacity_knm()`
+  (single source used by `_design_beams` AND the cross-check). **Environment
+  migration**: structuralcodes' `triangle` dep ships no 3.13+ wheels, so the
+  backend dev venv moved from Python 3.14 to **3.12.14** (manages via `uv`);
+  the old `.venv-py314` is kept as a backup, and requirements.txt documents
+  the constraint. Tests: `backend/tests/test_cross_check.py` (5 — helper
+  formula, graceful no-lib degradation, matrix inside band, tight typical
+  ratio, compliance reads design cages). Full suite: 109 passed.
 - **Remaining sub-items**:
   - **#9e** — wind (SBC 301 ch. 26–31) + full ELF with site class + drift
-  - **#9f** — adopt `structuralcodes` as cross-check for section formulas
 - **Implemented (#9c — real bar selection kills the assumed values)**:
   `concrete_design.round_up_to_bar_layout()` picks a deterministic real cage
   from the rebar catalogue (`BAR_AREA_MM2`/`BAR_KG_PER_M`, BS 4449 diameters
@@ -960,8 +982,9 @@ This document connects each roadmap item (1-25) to:
    submissions, not a blocker.
 2. **Engineering-upgrade sprint (#9a–#9f)** — #9a load combos ✅, #9b
    punching + §22.4 fix ✅, #9c real bar selection ✅ (kills
-   `rho_provided_assumed`), #9d shear/development/detailing ✅; next:
-   **#9e** wind/seismic, then #9f structuralcodes cross-check.
+   `rho_provided_assumed`), #9d shear/development/detailing ✅, #9f
+   structuralcodes cross-check ✅ (venv moved to Python 3.12.14); next:
+   **#9e** wind/seismic (SBC 301 ch. 26–31), the last remaining sub-item.
 3. **Integration sprint (#26–30)** — white-label → exporters, entitlement
    enforcement, lifecycle webhooks, collaboration↔governance review flow.
 4. **Then Phase 4** — #31 3D dual-mode viewer, #19 Arabic NLP, #20 slider,
