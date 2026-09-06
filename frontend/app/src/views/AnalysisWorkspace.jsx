@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { getComplianceReport } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import StructureViewer from '../components/StructureViewer.jsx'
 
@@ -37,6 +38,7 @@ function makeDemoPlan() {
 export default function AnalysisWorkspace() {
   const [plan, setPlan] = useState(null)
   const [result, setResult] = useState(null)
+  const [compliance, setCompliance] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [savedPlans, setSavedPlans] = useState([])
@@ -50,17 +52,31 @@ export default function AnalysisWorkspace() {
   }, [projectId])
 
   const analyze = useCallback(async (payload) => {
-    setBusy(true); setError(null); setResult(null)
+    setBusy(true); setError(null); setResult(null); setCompliance(null)
     try {
       const data = await api.analyze(payload)
       setResult(data)
-      setPlan(payload.plan || plan)
+      const activePlan = payload.plan || plan
+      setPlan(activePlan)
+      // Auto-run compliance against the real analysis result so the Analyze
+      // tab surfaces whether the design passes code (banner + cross-check).
+      try {
+        const report = await getComplianceReport({
+          project_id: projectId,
+          plan: activePlan,
+          analysis: data,
+        })
+        setCompliance(report)
+      } catch (ce) {
+        // Compliance failing must not erase the analysis result.
+        console.warn('Compliance auto-run failed:', ce)
+      }
     } catch (err) {
       setError(err.message || 'Analysis failed')
     } finally {
       setBusy(false)
     }
-  }, [plan])
+  }, [plan, projectId])
 
   const analyzeDemo = () => {
     const p = makeDemoPlan()
@@ -75,6 +91,11 @@ export default function AnalysisWorkspace() {
 
   const fmt = (v, unit) =>
     v === undefined || v === null ? '—' : `${Number(v).toLocaleString()} ${unit}`
+
+  // Extract the structuralcodes cross-check (#9f) from the compliance report.
+  const crossCheck = (compliance?.checks || []).find((c) =>
+    String(c.check_name || '').toLowerCase().includes('cross-check'))
+  const crossSections = crossCheck?.details?.sections || []
 
   if (!projectId) return <NoProject />
 
@@ -116,6 +137,24 @@ export default function AnalysisWorkspace() {
             <p className="muted small">Drag to orbit · scroll to zoom · green = light load, gold = moderate, red = near/over capacity.</p>
           </section>
 
+          {compliance && (
+            <section className="card span-2">
+              <div className="card-header">
+                <h3>Code Compliance (SBC 304)</h3>
+                <span className={`badge ${compliance.overall_status === 'pass' ? 'ok' : compliance.overall_status === 'warn' ? 'warn' : 'fail'}`}>
+                  {compliance.overall_status.toUpperCase()}
+                </span>
+              </div>
+              <div className="summary-grid four">
+                <div className="stat"><span className="stat-label">Checks</span><strong>{compliance.checks?.length ?? 0}</strong></div>
+                <div className="stat"><span className="stat-label">Passed</span><strong>{compliance.summary?.passed ?? 0}</strong></div>
+                <div className="stat"><span className="stat-label">Warnings</span><strong>{compliance.summary?.warned ?? 0}</strong></div>
+                <div className="stat"><span className="stat-label">Failed</span><strong>{compliance.summary?.failed ?? 0}</strong></div>
+              </div>
+              <p className="muted small">Detailed per-clause results (punching, shear, development length, cross-check, …) are in the <strong>Governance</strong> tab.</p>
+            </section>
+          )}
+
           <section className="card span-2">
             <div className="card-header"><h3>Summary of Forces</h3></div>
             <div className="summary-grid four">
@@ -151,6 +190,18 @@ export default function AnalysisWorkspace() {
             <p className={`pill ${result.design?.status === 'acceptable' ? 'ok' : 'warn'}`}>
               {result.design?.status || '—'}
             </p>
+            {crossCheck && (
+              <div style={{ marginTop: 12 }}>
+                <p className="muted small">
+                  Cross-checked vs <strong>EC2-2004</strong> (structuralcodes, {crossCheck.details?.library || 'structuralcodes'}):
+                </p>
+                <p className={`pill ${crossCheck.status === 'pass' ? 'ok' : crossCheck.status === 'warn' ? 'warn' : 'fail'}`}>
+                  {crossSections.length} section{crossSections.length !== 1 ? 's' : ''} ·
+                  ratio {crossSections.length ? `${Math.min(...crossSections.map((s) => s.ratio)).toFixed(2)}–${Math.max(...crossSections.map((s) => s.ratio)).toFixed(2)}` : '—'}
+                  {crossCheck.status === 'pass' ? ' (within band)' : ''}
+                </p>
+              </div>
+            )}
           </section>
 
           <section className="card">
