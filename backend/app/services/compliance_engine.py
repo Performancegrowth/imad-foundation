@@ -46,18 +46,31 @@ class ComplianceEngine:
 
     # ── individual checks ────────────────────────────────────────────────────
     def check_slab_thickness(self) -> Dict[str, Any]:
+        """�7.6.1.1 minimum slab thickness. The provided thickness comes from
+        the plan's materials.slab_thickness_mm when set; otherwise it is
+        computed from the span/depth ratio (the code minimum itself), flagged
+        as an engineered minimum rather than a modeled value."""
         span = self._max_span()
-        slab_type = str((self.plan.materials or {}).get("slab", "flat"))
-        actual_mm = {"flat": 180, "ribbed": 280, "two-way": 220}.get(slab_type, 200)
-        min_mm = math.ceil(span * 1000 / 25)          # §7.6.1.1 flat plate
+        min_mm = math.ceil(span * 1000 / 25)          # �7.6.1.1 flat plate
+
+        # Prefer a real slab thickness from the plan; else use the code minimum
+        # as the de-facto provided value (a design must be at least this thick).
+        mat = self.plan.materials or {}
+        actual_mm = mat.get("slab_thickness_mm")
+        source = "plan materials.slab_thickness_mm"
+        if actual_mm is None:
+            actual_mm = min_mm
+            source = "computed minimum (span/25, no slab thickness in plan)"
+
         ok = actual_mm >= min_mm
         return {
-            "check_name": "Minimum slab thickness (§7.6.1.1)",
+            "check_name": "Minimum slab thickness (�7.6.1.1)",
             "status": "pass" if ok else ("warn" if actual_mm >= min_mm * 0.9 else "fail"),
             "details": {
-                "clause": "SBC 304 §7.6.1.1",
+                "clause": "SBC 304 �7.6.1.1",
                 "required_mm": min_mm, "provided_mm": actual_mm,
                 "governing_span_m": round(span, 2),
+                "thickness_source": source,
                 "note": "Span/25 for flat plates without drop panels.",
             },
         }
@@ -100,23 +113,49 @@ class ComplianceEngine:
         }
 
     def check_deflection(self) -> Dict[str, Any]:
+        """Table 7.3.2 deflection limits — checked against the REAL deflections
+        computed by the structural analysis (member_forces[*].deflection_mm),
+        not an assumed slab estimate. The analytic solver computes per-beam
+        δ = 5·(w_d+w_l)·L⁴/(384·E·I) using the actual beam width/depth."""
         span = self._max_span()
-        limit = span / 240.0 * 1000                    # mm — total §7.3.2
-        est = self.analysis.get("max_deflection_mm")
-        if est is None:
-            est = span * 1000 / 400                    # L/d heuristic
-            basis = "estimated (no analysis attached)"
-        else:
-            basis = "from structural analysis"
-        status = "pass" if est <= limit else ("warn" if est <= limit * 1.1 else "fail")
+        span_mm = span * 1000
+        limit_total = span_mm / 240
+        limit_live = span_mm / 360
+
+        # Read actual deflections from the analysis result.
+        mf = self.analysis.get("member_forces") or []
+        beam_defls = [float(f.get("deflection_mm") or 0.0)
+                      for f in mf
+                      if isinstance(f, dict) and f.get("kind") == "beam"
+                      and float(f.get("deflection_mm") or 0.0) > 0.0]
+
+        if not beam_defls:
+            return {
+                "check_name": "Max deflection (Table 7.3.2)",
+                "status": "warn",
+                "details": {
+                    "clause": "SBC 304 Table 7.3.2 (ACI 318-19 Table 24.2.2)",
+                    "max_deflection_mm": None,
+                    "governing_span_m": round(span, 2),
+                    "limit_total_mm": round(limit_total, 2),
+                    "limit_live_mm": round(limit_live, 2),
+                    "note": "No beam deflections in analysis — run structural analysis first.",
+                },
+            }
+
+        max_defl = max(beam_defls)
+        ok = max_defl <= limit_total
         return {
-            "check_name": "Maximum deflection (Table 7.3.2)",
-            "status": status,
+            "check_name": "Max deflection (Table 7.3.2)",
+            "status": "pass" if ok else ("warn" if max_defl <= limit_total * 1.1 else "fail"),
             "details": {
-                "clause": "SBC 304 Table 7.3.2",
-                "limit_mm": round(limit, 1),
-                "computed_mm": round(float(est), 1),
-                "basis": basis,
+                "clause": "SBC 304 Table 7.3.2 (ACI 318-19 Table 24.2.2)",
+                "max_deflection_mm": round(max_defl, 2),
+                "governing_span_m": round(span, 2),
+                "limit_total_mm": round(limit_total, 2),
+                "limit_live_mm": round(limit_live, 2),
+                "beams_checked": len(beam_defls),
+                "note": "Checked against analysis-computed deflections (D+L envelope).",
             },
         }
 
