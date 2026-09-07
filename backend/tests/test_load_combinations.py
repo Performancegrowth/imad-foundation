@@ -108,13 +108,15 @@ def test_engine_designs_at_strength_level_not_service():
 def test_engine_records_combinations_and_traceability():
     result = _analyze()
     combos = result.loads["load_combinations"]
-    assert {"LC1", "LC2", "LC3", "LC4"} <= {c["id"] for c in combos}
+    # Seismic (LC1–LC4) always present; wind (LC5–LC6) added by default (roadmap #9e).
+    assert {"LC1", "LC2", "LC3", "LC4", "LC5", "LC6"} <= {c["id"] for c in combos}
     assert all(c["source"] == CODE_SOURCE for c in combos)
     assert result.loads["load_cases"]["live_kpa"] > 0
+    assert result.loads["load_cases"]["wind_base_kN"] > 0    # wind now computed
     assert result.loads["combination_notes"]     # honest omissions disclosed
     for f in result.member_forces:
         assert f.load_combo in {c["name"] for c in combos}
-    assert result.diagnostics.stats["load_combinations"] == 4
+    assert result.diagnostics.stats["load_combinations"] == 6
 
 
 def test_engine_analysis_is_deterministic():

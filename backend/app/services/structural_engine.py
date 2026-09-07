@@ -19,6 +19,12 @@ from typing import Any, Dict, List, Optional
 
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
+from app.services.lateral_loads import (
+    DEFAULT_CD, DEFAULT_I, DEFAULT_KD, DEFAULT_KE, DEFAULT_KZT,
+    DEFAULT_R, DEFAULT_S1, DEFAULT_SITE_CLASS, DEFAULT_SS,
+    DEFAULT_WIND_EXPOSURE, DEFAULT_WIND_SPEED_MPS,
+    SeismicParameters, WindParameters, elf_base_shear, wind_base_shear,
+)
 from app.services.load_combinations import (
     NOTES as COMBO_NOTES,
     envelope as envelope_actions,
@@ -150,11 +156,14 @@ class OpenSeesEngine(StructuralEngine):
         # member. Seismic (E) combos apply only when a lateral case exists.
         dead_kpa = round(loads["floor_area_kpa"] - loads["live_kpa"], 3)
         lateral_kN = loads["lateral_base_kN"]
-        combos = strength_combinations(include_seismic=lateral_kN > 0)
+        wind_kN = loads.get("wind_base_kN", 0.0)
+        combos = strength_combinations(include_seismic=lateral_kN > 0,
+                                       include_wind=wind_kN > 0)
         loads["load_cases"] = {
             "dead_kpa": dead_kpa,
             "live_kpa": loads["live_kpa"],
             "seismic_base_kN": lateral_kN,
+            "wind_base_kN": wind_kN,
         }
         loads["load_combinations"] = combos
         loads["combination_notes"] = list(COMBO_NOTES)
@@ -190,11 +199,13 @@ class OpenSeesEngine(StructuralEngine):
         p_d = dead_kpa * total_floor_area * stories / n_cols
         p_l = loads["live_kpa"] * total_floor_area * stories / n_cols
         p_e = lateral_kN * floor_h / n_cols
+        p_w = wind_kN * floor_h / n_cols
         for col in plan.columns:
             env = envelope_actions(
                 {"D": {"M": 0.0, "V": 0.0, "N": p_d},
                  "L": {"M": 0.0, "V": 0.0, "N": p_l},
-                 "E": {"M": 0.0, "V": 0.0, "N": p_e}},
+                 "E": {"M": 0.0, "V": 0.0, "N": p_e},
+                 "W": {"M": 0.0, "V": 0.0, "N": p_w}},
                 combos)
             if env["N_min"]["value"] < 0.0:
                 warnings.append(
@@ -215,10 +226,15 @@ class OpenSeesEngine(StructuralEngine):
 
         base_shear = loads["lateral_base_kN"]
         base_gravity = loads["total_weight_kN"]
+        wind_kn = loads.get("wind_base_kN", 0.0)
         reactions = {
             "base_shear_kN": round(base_shear, 2),
             "total_gravity_kN": round(base_gravity, 2),
+            "wind_base_kN": round(wind_kn, 2),
             "overturning_moment_kNm": round(base_shear * stories * floor_h / 1.5, 2),
+            "wind_overturning_kNm": round(wind_kn * stories * floor_h / 1.5, 2),
+            "seismic_provenance": loads.get("seismic_provenance", {}),
+            "wind_provenance": loads.get("wind_provenance", {}),
         }
 
         design = concrete_design(forces, materials=plan.materials, plan=plan)
@@ -297,17 +313,47 @@ class OpenSeesEngine(StructuralEngine):
         floor_kpa = UNIT_WEIGHT_CONCRETE * 0.15 + dead_extra + tiles + live
         floor_area = self._plan_area(plan)
         weight_kN = floor_kpa * floor_area * max(1, plan.stories)
-        cs = float(options.get("seismic_coefficient", 0.10))
-        lateral = cs * weight_kN
-        # Load provenance: describe where each number actually comes from so
-        # downstream reports can cite the method truthfully. Code-clause
-        # citation belongs to the compliance engine, not here.
+        stories = max(1, plan.stories)
+        floor_h = float(options.get("floor_height_m", 3.0))
+        height_m = stories * floor_h
+        bounds = plan.bounds()
+        width_m = max(bounds["max_x"] - bounds["min_x"], 1.0)
+        length_m = max(bounds["max_y"] - bounds["min_y"], 1.0)
+
+        # ── Seismic (SBC 301 §12.8) ────────────────────────────────────────
+        # Read from survey if present, else Saudi defaults (flagged in provenance).
+        seismic = SeismicParameters(
+            ss=float(getattr(survey, "ss_mps2", None) or DEFAULT_SS),
+            s1=float(getattr(survey, "s1_mps2", None) or DEFAULT_S1),
+            site_class=str(getattr(survey, "site_class", None) or DEFAULT_SITE_CLASS),
+            r_factor=float(getattr(survey, "r_factor", None) or DEFAULT_R),
+            importance=float(getattr(survey, "seismic_importance", None) or DEFAULT_I),
+            height_m=height_m, stories=stories, floor_height_m=floor_h,
+        )
+        seismic_result = elf_base_shear(0.0, 0.0, weight_kN, seismic)
+        lateral = seismic_result["base_shear_kn"]
+
+        # ── Wind (SBC 301 ch. 27) ──────────────────────────────────────────
+        wind_speed = float(getattr(survey, "basic_wind_speed_mps", None) or DEFAULT_WIND_SPEED_MPS)
+        wind_exp = str(getattr(survey, "wind_exposure", None) or DEFAULT_WIND_EXPOSURE)
+        wind = WindParameters(
+            basic_wind_speed_mps=wind_speed, exposure_category=wind_exp,
+            kzt=DEFAULT_KZT, kd=DEFAULT_KD, ke=DEFAULT_KE,
+            height_m=height_m, width_m=width_m, length_m=length_m,
+            stories=stories, floor_height_m=floor_h,
+        )
+        wind_result = wind_base_shear(wind)
+        wind_kn = wind_result["base_shear_kn"]
+
         return {
             "floor_area_kpa": round(floor_kpa, 2),
             "total_weight_kN": round(weight_kN, 2),
             "lateral_base_kN": round(lateral, 2),
+            "wind_base_kN": round(wind_kn, 2),
             "live_kpa": live,
             "dead_extra_kpa": round(dead_extra, 2),
+            "period_s": seismic_result["period_s"],
+            "seismic_cs": seismic_result["cs"],
             "live_load_source": (
                 f"Imad default live load {LIVE_DEFAULT} kN/m² "
                 "(option live_kpa)"
@@ -317,10 +363,8 @@ class OpenSeesEngine(StructuralEngine):
                 f"+ {dead_extra} kN/m² superimposed (option dead_extra_kpa) "
                 f"+ {tiles} kN/m² tiles"
             ),
-            "base_shear_source": (
-                f"Cs = {cs} × total gravity weight "
-                "(option seismic_coefficient)"
-            ),
+            "seismic_provenance": seismic_result["provenance"],
+            "wind_provenance": wind_result["provenance"],
         }
 
     @staticmethod

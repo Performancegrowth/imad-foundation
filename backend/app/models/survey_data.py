@@ -28,6 +28,22 @@ class SurveyReading(BaseModel):
     raw_payload: Dict[str, Any] = Field(default_factory=dict)
     captured_at: Optional[datetime] = None
 
+    # ── Lateral-load parameters (roadmap #9e) ──────────────────────────────
+    ss_mps2: Optional[float] = Field(None, gt=0, le=3.0,
+        description="Mapped short-period spectral acceleration Ss (g)")
+    s1_mps2: Optional[float] = Field(None, gt=0, le=2.0,
+        description="Mapped 1-sec spectral acceleration S1 (g)")
+    site_class: Optional[str] = Field(None, pattern="^[A-F]$",
+        description="Site class per SBC 301 §12.2 (rock A → soft F)")
+    r_factor: Optional[float] = Field(None, ge=1.0, le=8.0,
+        description="Response modification factor R per §12.2")
+    seismic_importance: Optional[float] = Field(None, ge=1.0, le=1.5,
+        description="Importance factor I per §12.2")
+    basic_wind_speed_mps: Optional[float] = Field(None, ge=0, le=100,
+        description="3-sec gust basic wind speed V (m/s), SBC ch. 27")
+    wind_exposure: Optional[str] = Field(None, pattern="^[BCD]$",
+        description="Wind exposure category B/C/D per ch. 27")
+
 
 class SurveySummary(BaseModel):
     """Human-readable summary card drawn from imported survey data."""
