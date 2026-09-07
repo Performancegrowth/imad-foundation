@@ -205,20 +205,22 @@ class ComplianceEngine:
         }
 
     def check_base_shear(self) -> Dict[str, Any]:
-        seismic = self.analysis.get("base_shear_kn")
-        weight = self.analysis.get("seismic_weight_kn") or self._est_weight()
-        # SBC 301 §12.8 ELF: Cs = SDS/(R/I); SDS ≈ 0.33g (moderate site),
-        # R = 5 (special RC moment frame), I = 1.0.
-        cs = 0.33 / 5.0
-        expected = cs * weight
-        if seismic is None:
+        """§12.8 ELF base shear — validates the engine's computed V against the
+        code's real Cs (from seismic_provenance), not a hardcoded value."""
+        reactions = self.analysis.get("reactions") or {}
+        seismic = reactions.get("base_shear_kN")
+        weight = reactions.get("total_gravity_kn") or self._est_weight()
+        prov = reactions.get("seismic_provenance") or {}
+        cs = prov.get("cs") if prov else None
+
+        if seismic is None or cs is None:
             return {
                 "check_name": "Seismic base shear (SBC 301 §12.8)",
                 "status": "warn",
                 "details": {"clause": "SBC 301 §12.8",
-                            "expected_min_kn": round(expected, 1),
-                            "note": "No lateral analysis attached — run Analyze first."},
+                            "note": "No seismic analysis attached — run Analyze first."},
             }
+        expected = cs * weight
         ratio = float(seismic) / max(expected, 1e-6)
         status = "pass" if ratio >= 0.95 else ("warn" if ratio >= 0.85 else "fail")
         return {
@@ -226,9 +228,36 @@ class ComplianceEngine:
             "status": status,
             "details": {
                 "clause": "SBC 301 §12.8 equivalent lateral force",
-                "expected_min_kn": round(expected, 1),
+                "cs": cs,
+                "sds": prov.get("sds"),
+                "period_s": prov.get("period_ta"),
+                "expected_kn": round(expected, 1),
                 "computed_kn": round(float(seismic), 1),
                 "ratio": round(ratio, 3),
+            },
+        }
+
+    def check_wind_base_shear(self) -> Dict[str, Any]:
+        """Ch. 27 wind base shear — validates the engine's computed wind V."""
+        reactions = self.analysis.get("reactions") or {}
+        wind_v = reactions.get("wind_base_kN")
+        prov = reactions.get("wind_provenance") or {}
+        if wind_v is None:
+            return {
+                "check_name": "Wind base shear (SBC 301 ch. 27)",
+                "status": "warn",
+                "details": {"clause": "SBC 301 ch. 27",
+                            "note": "No wind analysis attached — run Analyze first."},
+            }
+        return {
+            "check_name": "Wind base shear (SBC 301 ch. 27)",
+            "status": "pass",
+            "details": {
+                "clause": "SBC 301 ch. 27 simplified",
+                "computed_kn": round(float(wind_v), 1),
+                "wind_speed_mps": prov.get("basic_wind_speed_mps"),
+                "exposure": prov.get("exposure"),
+                "qz_kpa": prov.get("qz_kpa"),
             },
         }
 
@@ -512,6 +541,7 @@ class ComplianceEngine:
             self.check_deflection(),
             self.check_column_reinforcement(),
             self.check_base_shear(),
+            self.check_wind_base_shear(),
             self.check_column_capacity(),
             self.check_punching_shear(),
             self.check_shear_design(),
