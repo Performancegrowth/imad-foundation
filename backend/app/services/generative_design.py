@@ -24,16 +24,83 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.storage import storage_root
-from app.models.plan_data import Beam, Column, PlanData, Wall
+from app.models.plan_data import Beam, Column, GridLine, PlanData, Wall
 
 log = logging.getLogger("imad.generative")
 
-# Unit costs / emission factors (approx, configurable): used for fitness only.
+# Unit costs / emission factors (approx, configurable): used ONLY for the fast
+# GA search heuristic (see _real_fitness for the authoritative final numbers).
 CONCRETE_COST_PER_M3 = 210.0          # USD
 STEEL_COST_PER_KG = 1.1               # USD
 CARBON_CONCRETE_PER_M3 = 320.0        # kgCO2e per m³ concrete (C30)
 CARBON_STEEL_PER_KG = 1.9             # kgCO2e per kg steel rebar
 SLAB_TYPES = ("flat", "ribbed", "two-way")
+
+# Number of Pareto candidates given the full real-engine validation pass at the
+# end of a run. Kept small because each costs ~0.2 s (analyze + BOQ + LCA +
+# compliance); the GA search itself stays on the fast volumetric estimate.
+_REAL_VERIFY_N = 8
+
+
+def _real_fitness(genes: Dict[str, Any], length_m: float, width_m: float,
+                  stories: int = 1) -> Tuple[Dict[str, float], Dict[str, Any]]:
+    """Run the full honest engineering pipeline for one candidate and return a
+    fitness dict whose cost / carbon / safety come from the REAL engine, plus a
+    serialised plan. Lower is better for all four objectives.
+
+    cost        → BOQ priced take-off (USD/m²)
+    carbon      → cradle-to-gate LCA   (kgCO₂e/m²)
+    safety      → SBC 304 compliance + utilisation penalty (0 = all pass w/ headroom)
+    flexibility → bay-size design quality (kept geometric; not a capacity claim)
+    """
+    from app.services.structural_engine import OpenSeesEngine
+    from app.services.boq_generator import generate_boq
+    from app.services.carbon_calculator import compute_embodied_carbon
+    from app.services.compliance_engine import ComplianceEngine
+
+    plan = build_plan(genes, length_m, width_m, stories)
+    result = OpenSeesEngine().analyze(plan)
+
+    boq = generate_boq(plan)
+    carbon = compute_embodied_carbon(boq)
+
+    analysis = {
+        "member_forces": [f.__dict__ for f in result.member_forces],
+        "design": result.design,
+        "reactions": result.reactions,
+        "loads": result.loads,
+    }
+    compliance = ComplianceEngine(plan, analysis=analysis).run_all()
+    summary = compliance.get("summary", {})
+    failed = int(summary.get("failed", 0))
+    warned = int(summary.get("warned", 0))
+
+    # Utilisation headroom: penalise candidates whose design is over-capacity.
+    design = result.design or {}
+    max_util = float(design.get("max_utilization") or 0.0)
+    util_penalty = max(0.0, max_util - 1.0)
+
+    safety = failed * 2.0 + warned * 1.0 + util_penalty * 1.0
+
+    fitness = {
+        "cost": round(float(boq["totals"]["amount_per_m2"]), 2),
+        "carbon": round(float(carbon["intensity_kgco2e_m2"]), 2),
+        "flexibility": round((genes["bay_x"] + genes["bay_y"]) / 18.0, 3),
+        "safety": round(safety, 3),
+        "validated": True,
+        "provenance": {
+            "cost": "BOQ priced take-off (boq_generator)",
+            "carbon": "cradle-to-gate LCA (carbon_calculator)",
+            "safety": f"SBC 304 compliance, {failed} fail / {warned} warn",
+        },
+    }
+    return fitness, plan.model_dump(mode="json")
+
+
+def _real_score(f: Dict[str, float]) -> float:
+    """Weighted scalar for ranking the validated candidates (lower better)."""
+    return (float(f.get("cost", 0)) + float(f.get("carbon", 0))
+            + float(f.get("flexibility", 0)) + float(f.get("safety", 0)))
 
 GENES = {
     "bay_x": (4.0, 9.0),        # (min, max) m spacing
@@ -132,7 +199,8 @@ def build_plan(genes: Dict[str, Any], length_m: float, width_m: float,
 
     plan.walls.append(Wall(id="gw0", x1=xs[0], y1=ys[0], x2=xs[-1], y2=ys[0]))
     plan.walls.append(Wall(id="gw1", x1=xs[-1], y1=ys[0], x2=xs[-1], y2=ys[-1]))
-    plan.grids = [{"id": f"v{i}", "orientation": "vertical", "position": x, "label": str(i + 1)}
+    plan.grids = [GridLine(id=f"v{i}", orientation="vertical", position=x,
+                           label=str(i + 1))
                   for i, x in enumerate(xs)]
     return plan
 
@@ -249,9 +317,27 @@ class GenerativeDesignEngine:
             fitness, plan = evaluate_fitness(genes, length_m, width_m, stories)
             scored.append({"genes": genes, "fitness": fitness, "plan": plan})
 
+        # Search is done on the fast estimate; now validate the top Pareto
+        # candidates with the FULL real engine (analyze → BOQ → LCA →
+        # compliance). The figures reported to the user are therefore real.
         front = pareto_front(scored)
-        front.sort(key=lambda s: sum(s["fitness"].values()))
-        top = front[:3] or scored[:3]
+        candidates = sorted(front or scored,
+                            key=lambda s: sum(s["fitness"].values()))[:_REAL_VERIFY_N]
+
+        verified: List[Dict[str, Any]] = []
+        for s in candidates:
+            try:
+                fitness, plan_dict = _real_fitness(
+                    s["genes"], length_m, width_m, stories)
+                verified.append({**s, "fitness": fitness, "plan": plan_dict})
+            except Exception as exc:
+                # A real-engine failure must not crash the run; keep the fast
+                # estimate but flag the candidate as unvalidated.
+                log.warning("Real validation failed for a candidate: %s", exc)
+                verified.append({**s, "fitness": {**s["fitness"], "validated": False}})
+
+        verified.sort(key=lambda s: _real_score(s["fitness"]))
+        top = verified[:3] or scored[:3]
 
         return [DesignOption(
             option_id=f"opt-{i + 1}",
