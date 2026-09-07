@@ -38,7 +38,16 @@ CONCRETE_DENSITY = 2400.0         # kg/m³
 UNIT_WEIGHT_CONCRETE = 25.0       # kN/m³
 STEEL_DENSITY_RATIO = 0.012       # default longitudinal steel ratio
 DEAD_ADD = 1.5                    # kPa superimposed dead (finishes/cladding)
-LIVE_DEFAULT = 2.5                # kPa floor live load
+LIVE_DEFAULT = 2.4                # kPa floor live load (office, SBC 301 Table 4.1)
+
+# SBC 301 Table 4.1 — minimum uniformly distributed live loads (kPa)
+LIVE_LOADS_BY_OCCUPANCY: Dict[str, float] = {
+    "residential": 1.9,
+    "office": 2.4,
+    "corridor": 4.8,
+    "storage": 6.0,
+    "assembly": 4.8,
+}
 
 
 class StructuralError(Exception):
@@ -184,7 +193,8 @@ class OpenSeesEngine(StructuralEngine):
                 combos)
             # Serviceability deflection uses unfactored D + L — combos are
             # for strength only (ACI 318-19 §5.3 vs §24.2 split).
-            deflection = (5 * (w_d + w_l) * span ** 4) / (384 * self._beam_rigidity(beam))
+            fc_mpa = float((plan.materials or {}).get("concrete_strength_mpa", 30.0))
+            deflection = (5 * (w_d + w_l) * span ** 4) / (384 * self._beam_rigidity(beam, fc_mpa))
             forces.append(MemberForce(
                 element_id=beam.id, kind="beam", level=beam.level,
                 moment_kNm=round(env["M"]["value"], 2),
@@ -308,7 +318,10 @@ class OpenSeesEngine(StructuralEngine):
 
     def _derive_loads(self, plan, survey, options) -> Dict[str, Any]:
         dead_extra = float(options.get("dead_extra_kpa", DEAD_ADD))
-        live = float(options.get("live_kpa", LIVE_DEFAULT))
+        # SBC 301 Table 4.1 by occupancy; option override wins.
+        occupancy = str(getattr(plan, "occupancy_type", None) or "office")
+        default_live = LIVE_LOADS_BY_OCCUPANCY.get(occupancy, LIVE_DEFAULT)
+        live = float(options.get("live_kpa", default_live))
         tiles = float(options.get("tiles_kpa", 0.5))
         floor_kpa = UNIT_WEIGHT_CONCRETE * 0.15 + dead_extra + tiles + live
         floor_area = self._plan_area(plan)
@@ -355,9 +368,10 @@ class OpenSeesEngine(StructuralEngine):
             "period_s": seismic_result["period_s"],
             "seismic_cs": seismic_result["cs"],
             "live_load_source": (
-                f"Imad default live load {LIVE_DEFAULT} kN/m² "
-                "(option live_kpa)"
+                f"SBC 301 Table 4.1 — {occupancy} = {live} kN/m² "
+                "(option live_kpa overrides)"
             ),
+            "occupancy_type": occupancy,
             "dead_load_source": (
                 f"Slab self-weight (0.15 m × {UNIT_WEIGHT_CONCRETE} kN/m³) "
                 f"+ {dead_extra} kN/m² superimposed (option dead_extra_kpa) "
@@ -383,10 +397,11 @@ class OpenSeesEngine(StructuralEngine):
         return min(bx, by) / 2.0
 
     @staticmethod
-    def _beam_rigidity(beam) -> float:
+    def _beam_rigidity(beam, fc_mpa: float = 30.0) -> float:
+        """E·I for deflection. Ec = 4700·√f'c (ACI 318-19 §19.2.2.1, MPa)."""
         I = (beam.width_m * beam.depth_m ** 3) / 12.0
-        E = 30e6  # kPa → N/m² for SI deflection
-        return E * I
+        Ec = 4700.0 * math.sqrt(fc_mpa) * 1000.0  # MPa → kPa
+        return Ec * I
 
     @staticmethod
     def _modal_estimate(frame, stories, floor_h) -> List[float]:

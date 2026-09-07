@@ -125,7 +125,9 @@ def test_column_capacity_uses_factored_member_forces():
 def test_column_capacity_warns_without_analysis():
     check = ComplianceEngine(PlanData(**_PLAN)).check_column_capacity()
     assert check["status"] == "warn"
-    assert check["details"]["phi_pn_kn"] == pytest.approx(1402.2, rel=0.05)
+    # No design attached → falls back to 2% Ag (flagged via rho_source).
+    assert check["details"]["rho_source"] == "assumed 2% (no design attached)"
+    assert check["details"]["phi_pn_kn"] == pytest.approx(1562.7, rel=0.05)
 
 
 def test_column_capacity_legacy_fallback_key():

@@ -84,6 +84,7 @@ class PlanData(BaseModel):
     rooms: List[Room] = Field(default_factory=list)
     stories: int = 1
     materials: Dict[str, Any] = Field(default_factory=lambda: {"concrete": "C30", "steel": "A615 Gr60"})
+    occupancy_type: str = "office"   # residential | office | corridor | storage | assembly
     image: Optional[ImageInput] = None
     label: str = ""
     original: Dict[str, Any] = Field(default_factory=dict)

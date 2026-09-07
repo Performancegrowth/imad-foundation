@@ -87,8 +87,9 @@ def test_engine_designs_at_strength_level_not_service():
     beam = next(f for f in result.member_forces if f.kind == "beam")
 
     # Reproduce the engine's dead/live split and the LC2 factored moment.
-    # dead = 0.15 m slab × 25 + 1.5 SDL + 0.5 tiles = 5.75 kPa; live = 2.5 kPa.
-    dead_kpa, live_kpa = 5.75, 2.5
+    # dead = 0.15 m slab × 25 + 1.5 SDL + 0.5 tiles = 5.75 kPa;
+    # live = 2.4 kPa (SBC 301 Table 4.1, office occupancy).
+    dead_kpa, live_kpa = 5.75, 2.4
     trib = 0.5                                   # _tributary_width for this plan
     span = 10.0
     w_d = dead_kpa * trib + 25.0 * 0.3 * 0.5     # + beam self-weight
@@ -99,9 +100,10 @@ def test_engine_designs_at_strength_level_not_service():
     assert beam.moment_kNm == pytest.approx(m_lc2, abs=0.05)
     assert beam.moment_kNm > m_service           # factored, not service demand
     assert beam.load_combo == "1.2D + 1.6L"
-    # Deflection stays a service-level (unfactored) quantity.
+    # Deflection uses Ec = 4700·√f'c (ACI 318-19 §19.2.2.1), not 30 GPa.
+    Ec = 4700.0 * (30.0 ** 0.5) * 1000.0        # MPa → kPa
     assert beam.deflection_mm == pytest.approx(
-        5 * (w_d + w_l) * span ** 4 / 384 / (30e6 * (0.3 * 0.5 ** 3) / 12) * 1000,
+        5 * (w_d + w_l) * span ** 4 / 384 / (Ec * (0.3 * 0.5 ** 3) / 12) * 1000,
         rel=0.01)
 
 

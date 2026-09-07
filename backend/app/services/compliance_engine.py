@@ -265,12 +265,22 @@ class ComplianceEngine:
         demands = self._column_axial_demands()
         size = self.plan.columns[0].size_m if self.plan.columns else 0.3
         fc_mpa, fy_mpa = 30.0, 420.0
-        ast = 4 * math.pi * 18 ** 2 / 4                  # mm² — 4Ø18
         ag = (size * 1000) ** 2                          # mm²
+        # Read real column steel from the #9c design pass; fall back to 2% only
+        # when no design is attached (flagged in details).
+        design_cols = ((self.analysis.get("design") or {}).get("columns")) or []
+        if design_cols:
+            gov = max(design_cols, key=lambda c: float(c.get("as_provided_mm2") or 0.0))
+            ast = float(gov.get("as_provided_mm2") or 0.02 * ag)
+            rho_source = "design pass (roadmap #9c)"
+        else:
+            ast = 0.02 * ag
+            rho_source = "assumed 2% (no design attached)"
         phi_pn = 0.65 * 0.80 * (0.85 * fc_mpa * (ag - ast) + fy_mpa * ast)
         base_details = {
             "clause": "SBC 304 §22.4 (φPn,max = 0.80φ[0.85f'c(Ag−Ast)+fyAst])",
             "phi_pn_kn": round(phi_pn / 1000, 1),
+            "rho_source": rho_source,
         }
         if not demands:
             return {"check_name": "Column axial capacity (§22.4)", "status": "warn",
