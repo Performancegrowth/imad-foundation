@@ -158,6 +158,7 @@ class PlanGenerator(ABC):
                             label=f"{use.title()} building")
         plan.stories = floors
         plan.source = "questionnaire"
+        plan.occupancy_type = use          # SBC 301 Table 4.1 live load
         plan.original = answers
         return plan
 

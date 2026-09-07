@@ -9,6 +9,9 @@ const EMPTY = {
   latitude: '',
   longitude: '',
   soil_type: 'clay',
+  // Lateral-load parameters (SBC 301 §12.8 seismic + ch. 27 wind)
+  ss_mps2: '', s1_mps2: '', site_class: 'D', r_factor: '',
+  basic_wind_speed_mps: '', wind_exposure: 'B',
 }
 
 export default function SurveyWorkspace() {
@@ -112,6 +115,47 @@ export default function SurveyWorkspace() {
         </form>
 
         <hr className="divider" />
+        <h3>Seismic &amp; Wind (SBC 301)</h3>
+        <p className="muted small">Lateral-load parameters. Defaults apply for Saudi Arabia when blank.</p>
+        <form className="form-grid" onSubmit={submitManual}>
+          <label>
+            Ss (short-period, g)
+            <input type="number" min="0" max="3" step="0.01" value={form.ss_mps2} onChange={set('ss_mps2')} placeholder="0.35" />
+          </label>
+          <label>
+            S1 (1-sec, g)
+            <input type="number" min="0" max="2" step="0.01" value={form.s1_mps2} onChange={set('s1_mps2')} placeholder="0.12" />
+          </label>
+          <label>
+            Site class
+            <select value={form.site_class} onChange={set('site_class')}>
+              <option value="A">A — Hard rock</option>
+              <option value="B">B — Rock</option>
+              <option value="C">C — Very dense soil</option>
+              <option value="D">D — Stiff soil (default)</option>
+              <option value="E">E — Soft soil</option>
+              <option value="F">F — Requires site study</option>
+            </select>
+          </label>
+          <label>
+            R factor (response mod.)
+            <input type="number" min="1" max="8" step="0.5" value={form.r_factor} onChange={set('r_factor')} placeholder="5.0" />
+          </label>
+          <label>
+            Basic wind speed (m/s)
+            <input type="number" min="0" max="100" step="1" value={form.basic_wind_speed_mps} onChange={set('basic_wind_speed_mps')} placeholder="32" />
+          </label>
+          <label>
+            Wind exposure
+            <select value={form.wind_exposure} onChange={set('wind_exposure')}>
+              <option value="B">B — Suburban/urban</option>
+              <option value="C">C — Open terrain</option>
+              <option value="D">D — Flat, unobstructed</option>
+            </select>
+          </label>
+        </form>
+
+        <hr className="divider" />
         <h3>Import geotechnical report</h3>
         <p className="muted small">PDF report, topographic CSV, contour DXF, or LAS point cloud.</p>
         <div className="inline-controls">
@@ -148,6 +192,24 @@ export default function SurveyWorkspace() {
           <div className="stat">
             <span className="stat-label">Location</span>
             <strong>{summary?.location || 'Not set'}</strong>
+          </div>
+        </div>
+        <div className="summary-grid" style={{ marginTop: 12 }}>
+          <div className="stat">
+            <span className="stat-label">Ss / S1</span>
+            <strong>{summary?.ss_mps2 || '—'} / {summary?.s1_mps2 || '—'} g</strong>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Site class</span>
+            <strong>{summary?.site_class || 'D'}</strong>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Wind speed</span>
+            <strong>{summary?.basic_wind_speed_mps || '—'} m/s</strong>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Exposure</span>
+            <strong>{summary?.wind_exposure || 'B'}</strong>
           </div>
         </div>
         <p className="muted small" style={{ marginTop: 12 }}>
