@@ -423,3 +423,153 @@ def preliminary_boq(plan: PlanData, forces: List[MemberForce],
         "footprint_m2": round(slab_area, 2),
         "units": "m³ (concrete), t (steel)",
     }
+
+
+# ─── Stair design (roadmap #9 extension) ────────────────────────────────────
+# ACI 318-19 §7.4 / SBC 304 — one-way slab stairs (inclined slab analysis).
+
+STAIR_CONCRETE_UNIT_KN3 = 25.0
+STAIR_SDL_KPA = 1.5
+STAIR_LIVE_RESIDENTIAL = 2.0
+STAIR_LIVE_CORRIDOR = 4.0
+STAIR_SLAB_THICKNESS_M = 0.15
+RISER_MM = 175
+TREAD_MM = 270
+PHI_FLEXURE = 0.90
+PHI_SHEAR = 0.75
+
+
+def stair_geometry(storey_height_m: float, flight_angle_deg: float = 33.0,
+                   landing_m: float = 1.2) -> Dict[str, Any]:
+    """Compute stair geometry from storey height and flight angle."""
+    angle_rad = math.radians(flight_angle_deg)
+    n_risers = max(2, round((storey_height_m * 1000) / RISER_MM))
+    riser_h = (storey_height_m * 1000) / n_risers / 1000.0
+    tread_run = riser_h / math.tan(angle_rad)
+    flight_length = n_risers * tread_run
+    n_treads = n_risers - 1
+    horizontal_length = flight_length * math.cos(angle_rad) + landing_m
+    total_run = n_treads * tread_run + landing_m
+    return {
+        "n_risers": n_risers, "n_treads": n_treads,
+        "riser_mm": round(riser_h * 1000, 1), "tread_mm": round(tread_run * 1000, 1),
+        "flight_angle_deg": flight_angle_deg,
+        "flight_length_m": round(flight_length, 3),
+        "horizontal_length_m": round(horizontal_length, 3),
+        "total_run_m": round(total_run, 3), "landing_m": landing_m,
+        "storey_height_m": storey_height_m}
+
+
+def stair_design(storey_height_m: float, width_m: float = 1.2,
+                 flight_angle_deg: float = 33.0, landing_m: float = 1.2,
+                 live_kpa: float = STAIR_LIVE_CORRIDOR,
+                 fc_mpa: float = DEFAULT_FC_MPA,
+                 fy_mpa: float = DEFAULT_FY_MPA,
+                 slab_thickness_m: float = 0.0,
+                 cover_mm: float = COVER_MM) -> Dict[str, Any]:
+    """Full stair design per ACI 318-19 §7.4 (inclined slab)."""
+    geo = stair_geometry(storey_height_m, flight_angle_deg, landing_m)
+    angle_rad = math.radians(flight_angle_deg)
+    span_m = geo["horizontal_length_m"]
+    # Auto-size slab thickness: span/20 gives d ≈ span/25, satisfying ACI 24.2.2
+    if slab_thickness_m <= 0:
+        slab_thickness_m = max(0.15, span_m / 20.0)  # ACI 24.2.2
+    slab_self = slab_thickness_m * STAIR_CONCRETE_UNIT_KN3 / math.cos(angle_rad)
+    total_load = slab_self + STAIR_SDL_KPA + live_kpa
+    w_kn_m = total_load * width_m
+    mu = w_kn_m * span_m ** 2 / 8.0
+    vu = w_kn_m * span_m / 2.0
+    d_mm = (slab_thickness_m * 1000) - cover_mm - 6.0
+    req_as = _required_steel_mm2_per_m(mu, fc_mpa, fy_mpa, d_mm, width_m * 1000)
+    min_as = 0.0018 * (slab_thickness_m * 1000) * (width_m * 1000)
+    prov_as = max(req_as, min_as)
+    bar = _select_stair_bars(prov_as, width_m)
+    phi_vc = PHI_SHEAR * 0.17 * math.sqrt(fc_mpa) * (width_m * 1000) * d_mm / 1000.0
+    shear_ok = vu <= phi_vc
+    shear_ratio = vu / max(phi_vc, 1e-6)
+    span_depth = span_m * 1000 / (slab_thickness_m * 1000)
+    defl_ok = span_depth <= 20  # ACI 24.2.2: simply supported slab L/h ≤ 20
+    ld_mm = development_length_mm(bar["bar_diameter_mm"], fy_mpa, fc_mpa)
+    nodes = _stair_3d_nodes(geo, width_m, slab_thickness_m, storey_height_m)
+    concrete_m3 = geo["flight_length_m"] * width_m * slab_thickness_m
+    rebar_kg = bar["total_length_m"] * BAR_KG_PER_M.get(bar["bar_diameter_mm"], 1.578)
+    utilization = mu / max(_phi_mn_kn_m(prov_as, fc_mpa, fy_mpa, d_mm, width_m * 1000), 1e-6)
+    return {
+        "geometry": geo,
+        "loads": {"slab_self_kpa": round(slab_self, 2), "total_load_kpa": round(total_load, 2),
+                  "w_kn_m": round(w_kn_m, 2)},
+        "span_m": round(span_m, 3), "mu_kn_m": round(mu, 2), "vu_kn": round(vu, 2),
+        "d_mm": round(d_mm, 1),
+        "flexure": {"req_as_mm2": round(req_as, 1), "min_as_mm2": round(min_as, 1),
+                    "prov_as_mm2": round(prov_as, 1), "bars": bar,
+                    "phi_mn_kn_m": round(_phi_mn_kn_m(prov_as, fc_mpa, fy_mpa, d_mm, width_m * 1000), 2)},
+        "shear": {"phi_vc_kn": round(phi_vc, 2), "vu_kn": round(vu, 2),
+                  "ok": shear_ok, "ratio": round(shear_ratio, 3)},
+        "deflection": {"span_depth": round(span_depth, 1), "limit": 20, "ok": defl_ok},
+        "ld_mm": round(ld_mm, 1), "utilization": round(utilization, 2),
+        "ok": shear_ok and defl_ok and utilization <= 1.05,  # 5% tolerance
+        "nodes": nodes,
+        "boq": {"concrete_m3": round(concrete_m3, 3), "rebar_kg": round(rebar_kg, 2),
+                "rebar_source": "stair design (roadmap #9)"}}
+
+
+def _required_steel_mm2_per_m(mu_kn_m: float, fc_mpa: float, fy_mpa: float,
+                               d_mm: float, b_mm: float) -> float:
+    """Solve As from Mu = phi*As*fy*(d - a/2)."""
+    mu_n_mm = mu_kn_m * 1e6
+    phi = PHI_FLEXURE
+    A = phi * fy_mpa ** 2 / (2 * 0.85 * fc_mpa * b_mm)
+    B = -phi * fy_mpa * d_mm
+    C = mu_n_mm
+    disc = B ** 2 - 4 * A * C
+    if disc < 0:
+        return 0.0
+    as_mm2 = (-B - math.sqrt(disc)) / (2 * A)
+    return max(0.0, as_mm2)
+
+
+def _phi_mn_kn_m(as_mm2: float, fc_mpa: float, fy_mpa: float,
+                  d_mm: float, b_mm: float) -> float:
+    """Nominal moment capacity."""
+    a = as_mm2 * fy_mpa / (0.85 * fc_mpa * b_mm)
+    return PHI_FLEXURE * as_mm2 * fy_mpa * (d_mm - a / 2.0) / 1e6
+
+
+def _select_stair_bars(req_as_mm2: float, width_m: float) -> Dict[str, Any]:
+    """Select bottom bars for stair flight."""
+    spacing_options = [100, 125, 150, 175, 200]
+    for dia in _BEAM_DIA:
+        a_bar = BAR_AREA_MM2[dia]
+        for sp in spacing_options:
+            as_prov = a_bar * (1000 / sp)
+            if as_prov >= req_as_mm2:
+                n_bars = math.ceil(width_m * 1000 / sp)
+                total_length = n_bars * width_m * 1.2
+                return {"bar_diameter_mm": dia, "spacing_mm": sp,
+                        "as_provided_mm2": round(as_prov, 1), "n_bars": n_bars,
+                        "total_length_m": round(total_length, 2)}
+    return {"bar_diameter_mm": 20, "spacing_mm": 100,
+            "as_provided_mm2": BAR_AREA_MM2[20] * 10,
+            "n_bars": math.ceil(width_m * 10), "total_length_m": round(width_m * 12, 2)}
+
+
+def _stair_3d_nodes(geo: Dict[str, Any], width_m: float,
+                    slab_thickness_m: float, storey_height_m: float) -> List[Dict[str, Any]]:
+    """Generate 3D nodes for the stair flight."""
+    nodes = []
+    tread = geo["tread_mm"] / 1000.0
+    riser = geo["riser_mm"] / 1000.0
+    for i in range(geo["n_treads"]):
+        x = i * tread + tread / 2
+        y = (i + 0.5) * riser + slab_thickness_m / 2
+        nodes.append({"id": f"stair-step-{i}", "type": "box",
+                      "x": round(x, 3), "y": round(y, 3), "z": 0,
+                      "length": tread, "width": width_m, "height": slab_thickness_m,
+                      "rotation_z": 0, "color": "#C9A227"})
+    landing_x = geo["n_treads"] * tread + geo["landing_m"] / 2
+    landing_y = storey_height_m - slab_thickness_m / 2
+    nodes.append({"id": "stair-landing", "type": "box",
+                  "x": round(landing_x, 3), "y": round(landing_y, 3), "z": 0,
+                  "length": geo["landing_m"], "width": width_m, "height": slab_thickness_m,
+                  "rotation_z": 0, "color": "#888888"})
+    return nodes

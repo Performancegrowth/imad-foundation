@@ -28,6 +28,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from app.models.plan_data import PlanData
+from app.services.concrete_design import stair_design
 
 log = logging.getLogger("imad.compliance")
 
@@ -543,6 +544,39 @@ class ComplianceEngine:
                         "note": report["note"]},
         }
 
+
+    def check_stair_design(self) -> Dict[str, Any]:
+        """Stair design check per ACI 318-19 §7.4 (inclined slab)."""
+        base = {"clause": "SBC 304 §7.4 (ACI 318-19 §7.4 one-way slab stairs)"}
+        # Need a storey height to design stairs
+        cols = self.plan.columns
+        if not cols:
+            return {"check_name": "Stair design (§7.4)", "status": "warn",
+                    "details": {**base, "note": "No columns in plan — cannot size stairs."}}
+        storey_height = max(c.height for c in cols)
+        if storey_height <= 0:
+            return {"check_name": "Stair design (§7.4)", "status": "warn",
+                    "details": {**base, "note": "Zero storey height."}}
+        # Determine live load from occupancy
+        live_kpa = {"residential": 2.0, "office": 2.5, "corridor": 4.0,
+                    "storage": 6.0, "assembly": 4.8}.get(
+            getattr(self.plan, "occupancy_type", "office"), 4.0)
+        d = stair_design(storey_height, width_m=1.2, live_kpa=live_kpa)
+        status = "pass" if d["ok"] else ("warn" if d["utilization"] <= 1.1 else "fail")
+        return {
+            "check_name": "Stair design (§7.4)",
+            "status": status,
+            "details": {**base,
+                        "storey_height_m": storey_height,
+                        "span_m": d["span_m"],
+                        "utilization": d["utilization"],
+                        "bars": d["flexure"]["bars"],
+                        "shear_ok": d["shear"]["ok"],
+                        "deflection_ok": d["deflection"]["ok"],
+                        "boq": d["boq"],
+                        "note": "Stair flight designed as inclined slab."},
+        }
+
     # ── runner ────────────────────────────────────────────────────────────────
     def run_all(self) -> Dict[str, Any]:
         checks: List[Dict[str, Any]] = [
@@ -557,6 +591,7 @@ class ComplianceEngine:
             self.check_shear_design(),
             self.check_dev_length(),
             self.check_cross_validation(),
+            self.check_stair_design(),
         ]
         passed = sum(1 for c in checks if c["status"] == "pass")
         warned = sum(1 for c in checks if c["status"] == "warn")
