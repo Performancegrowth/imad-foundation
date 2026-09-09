@@ -28,7 +28,14 @@ from app.services.generative_design import (
     DesignOption,
     GenerativeDesignEngine,
 )
+from app.models.plan_data import PlanData
 from app.services.noncad_processor import PlanGenerator
+
+def _latest_plan_name(project_id: int) -> Optional[str]:
+    try:
+        return PlanGenerator.list_plans(project_id)[-1]
+    except Exception:
+        return None
 
 log = logging.getLogger("imad.api.generative")
 router = APIRouter()
@@ -37,12 +44,14 @@ _engine = GenerativeDesignEngine(population=50, generations=100)
 
 
 class GenerateRequest(BaseModel):
-    length_m: float = Field(gt=0, le=300, description="Building envelope length (m)")
-    width_m: float = Field(gt=0, le=300, description="Building envelope width (m)")
+    length_m: float = Field(0, gt=0, le=300, description="Building envelope length (m)")
+    width_m: float = Field(0, gt=0, le=300, description="Building envelope width (m)")
     stories: int = Field(default=1, ge=1, le=40)
     population: int = Field(default=50, ge=10, le=200)
     generations: int = Field(default=100, ge=5, le=200)
     seed: int = 42
+    project_id: int = Field(default=0, description="Resolve dimensions from a saved plan")
+    plan_name: Optional[str] = Field(default=None, description="Specific saved plan name")
 
 
 class SelectRequest(BaseModel):
@@ -55,14 +64,32 @@ class SelectRequest(BaseModel):
 @router.post("/generate-designs", summary="Generate structural design alternatives (NSGA-II)")
 async def generate_designs(payload: GenerateRequest) -> Dict[str, Any]:
     """Kick off a generative run in a background worker thread."""
+    # Resolve dimensions: explicit values win, else load from a saved plan.
+    length_m = payload.length_m
+    width_m = payload.width_m
+    stories = payload.stories
+    if payload.project_id and (length_m <= 0 or width_m <= 0):
+        name = payload.plan_name or _latest_plan_name(payload.project_id)
+        if name:
+            try:
+                plan = PlanGenerator.load_plan(payload.project_id, name)
+                b = plan.bounds()
+                length_m = max(b["max_x"] - b["min_x"], 5.0)
+                width_m = max(b["max_y"] - b["min_y"], 5.0)
+                stories = max(plan.stories, 1)
+            except Exception:
+                pass
+    if length_m <= 0 or width_m <= 0:
+        raise HTTPException(status_code=422, detail="Provide length_m/width_m or a valid project_id/plan_name.")
+
     # Fast path: serve a cached Pareto set for an identical envelope.
-    cached = _engine.load_cached(payload.length_m, payload.width_m, payload.stories)
+    cached = _engine.load_cached(length_m, width_m, stories)
     if cached:
         job_id = new_job("generative")
         update_job(job_id, status="completed", progress=1.0, result={
             "cached": True, "options": cached, "envelope": payload.model_dump()})
         audit.log_action("generate_design_cached", details={
-            "length_m": payload.length_m, "width_m": payload.width_m})
+            "length_m": length_m, "width_m": width_m})
         return {"job_id": job_id, "cached": True}
 
     engine = GenerativeDesignEngine(
@@ -75,7 +102,7 @@ async def generate_designs(payload: GenerateRequest) -> Dict[str, Any]:
 
         options: List[DesignOption] = engine.generate(
             payload.length_m, payload.width_m, payload.stories, progress=_progress)
-        engine.store_cache(payload.length_m, payload.width_m, payload.stories, options)
+        engine.store_cache(length_m, width_m, stories, options)
         return {
             "cached": False,
             "envelope": payload.model_dump(),
@@ -88,7 +115,7 @@ async def generate_designs(payload: GenerateRequest) -> Dict[str, Any]:
     job_id = new_job("generative")
     run_in_background(job_id, _run, job_id)
     audit.log_action("generate_design_started", details={
-        "length_m": payload.length_m, "width_m": payload.width_m,
+        "length_m": length_m, "width_m": width_m,
         "stories": payload.stories})
     return {"job_id": job_id, "cached": False}
 

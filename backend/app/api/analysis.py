@@ -70,6 +70,7 @@ def run_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
 
     rid = result_id("an")
     save_result(rid, {
+        "kind": "an",
         "project_id": request.project_id,
         "status": result.status,
         "solver": result.diagnostics.solver,
