@@ -577,6 +577,41 @@ class ComplianceEngine:
                         "note": "Stair flight designed as inclined slab."},
         }
 
+    def check_foundations(self) -> Dict[str, Any]:
+        """Isolated footing design per ACI 318-19 §13 / §22 (real checks)."""
+        base = {"clause": "SBC 304 §13.2 / §22.6 / §22.5 / §22.8 "
+                          "(ACI 318-19 isolated footings)"}
+        footings = ((self.analysis.get("design") or {}).get("footings")) or []
+        if not footings:
+            return {"check_name": "Foundation design (§13 / §22)",
+                    "status": "warn",
+                    "details": {**base,
+                                "note": "No foundation design attached — run "
+                                        "analysis with a plan and survey."}}
+        worst = max(footings, key=lambda f: float(f.get("utilization") or 0.0))
+        ratios = worst.get("ratios", {})
+        ok_all = all(bool(f.get("ok")) for f in footings)
+        status = "pass" if ok_all and float(worst.get("utilization") or 0) <= 1.0 \
+            else ("warn" if float(worst.get("utilization") or 0) <= 1.1 else "fail")
+        return {
+            "check_name": "Foundation design (§13 / §22)",
+            "status": status,
+            "details": {**base,
+                        "count": len(footings),
+                        "q_allow_kpa": worst.get("q_allow_kpa"),
+                        "worst_footing": worst.get("element"),
+                        "worst_width_m": worst.get("width_m"),
+                        "worst_depth_m": worst.get("depth_m"),
+                        "ratios": ratios,
+                        "utilization": worst.get("utilization"),
+                        "assumed_soil": (self.analysis.get("design", {})
+                                         .get("foundations", {})
+                                         .get("assumed_soil", False)),
+                        "note": "All isolated footings checked for soil, "
+                                "punching, one-way shear, flexure, development "
+                                "and bearing."},
+        }
+
     # ── runner ────────────────────────────────────────────────────────────────
     def run_all(self) -> Dict[str, Any]:
         checks: List[Dict[str, Any]] = [
@@ -591,6 +626,7 @@ class ComplianceEngine:
             self.check_shear_design(),
             self.check_dev_length(),
             self.check_cross_validation(),
+            self.check_foundations(),
             self.check_stair_design(),
         ]
         passed = sum(1 for c in checks if c["status"] == "pass")

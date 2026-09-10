@@ -249,6 +249,26 @@ class OpenSeesEngine(StructuralEngine):
 
         design = concrete_design(forces, materials=plan.materials, plan=plan)
 
+        # Foundation design (roadmap #9 — isolated footings, real ACI 318-19
+        # §13/§22 checks). Uses the same analysed loads/forces; survey soil
+        # capacity feeds q_allow (flagged when assumed).
+        try:
+            from app.services.foundation_design import design_foundations
+            foundations = design_foundations(
+                plan,
+                analysis={"member_forces": [f.__dict__ for f in forces],
+                          "loads": loads},
+                survey=survey,
+                fc_mpa=float((plan.materials or {}).get(
+                    "concrete_strength_mpa", 30.0)),
+                fy_mpa=float((plan.materials or {}).get(
+                    "steel_yield_mpa", 420.0)),
+            )
+            design["foundations"] = foundations
+            design["footings"] = foundations["footings"]
+        except Exception as _fe:
+            warnings.append(f"Foundation design unavailable: {_fe}")
+
         # Carry the design code identity and the φ factors actually used
         # (from CODE_PARAMS) into the result, with clause references, so the
         # SBC 304 report builder can cite them without inventing values.
