@@ -79,3 +79,15 @@ coverage/
 # ── Docker ────────────────────────────────────────────────────────
 # System images (large, generated) are ignored already via dist/
 docker-data/
+
+# ── Local diagnostic scratch (ad-hoc session probes) ──────────────
+/_b5*.txt
+/_diag*.txt
+/_dc*.txt
+/_dc.txt
+/_docker_probe.py
+/_git_probe.py
+/_git_state.txt
+/_grep*.txt
+/_scan_*.py
+/_cmp_*.txt

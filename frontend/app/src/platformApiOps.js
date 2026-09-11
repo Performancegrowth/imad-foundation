@@ -39,7 +39,12 @@ export const generateSubmissionPackage = (payload) => post('/submission/generate
 
 // Download an exports-dir file (PDF etc.) served by GET /exports/download.
 export const downloadExport = async (path, filename) => {
-  const res = await fetch(`${BASE_URL}/exports/download?path=${encodeURIComponent(path)}`)
+  const headers = { Accept: 'application/json' }
+  try {
+    const t = localStorage.getItem('imad_token')
+    if (t) headers.Authorization = `Bearer ${t}`
+  } catch { /* storage unavailable — request without a token */ }
+  const res = await fetch(`${BASE_URL}/exports/download?path=${encodeURIComponent(path)}`, { headers })
   if (!res.ok) throw new Error(`Download failed (${res.status})`)
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
