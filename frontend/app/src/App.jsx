@@ -1,15 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import CadWorkspace from './views/CadWorkspace.jsx'
 import CreatePlanWorkspace from './views/CreatePlanWorkspace.jsx'
 import SurveyWorkspace from './views/SurveyWorkspace.jsx'
-import AnalysisWorkspace from './views/AnalysisWorkspace.jsx'
 import GenerativeDesignWorkspace from './views/GenerativeDesignWorkspace.jsx'
 import BoqWorkspace from './views/BoqWorkspace.jsx'
 import CarbonWorkspace from './views/CarbonWorkspace.jsx'
 import PricingWorkspace from './views/PricingWorkspace.jsx'
 import ValidationWorkspace from './views/ValidationWorkspace.jsx'
-import Building3DWorkspace from './views/Building3DWorkspace.jsx'
 import ReviewWorkspace from './views/ReviewWorkspace.jsx'
 import CollaborationWorkspace from './views/CollaborationWorkspace.jsx'
 import EcosystemWorkspace from './views/EcosystemWorkspace.jsx'
@@ -23,6 +20,10 @@ import AuthWorkspace from './views/AuthWorkspace.jsx'
 import AuthActions from './components/AuthActions.jsx'
 import { setToken } from './platformApi.js'
 import { readStoredProject } from './useProjectId.jsx'
+
+const CadWorkspace = lazy(() => import('./views/CadWorkspace.jsx'))
+const AnalysisWorkspace = lazy(() => import('./views/AnalysisWorkspace.jsx'))
+const Building3DWorkspace = lazy(() => import('./views/Building3DWorkspace.jsx'))
 
 const NAV = [
   { id: 'welcome', label: 'Home', icon: '🏠', to: '/welcome' },
@@ -132,30 +133,32 @@ function Shell() {
           <AuthActions signedIn={signedIn} onOpen={openAuth} onSignOut={signOut} />
         </header>
         <section className="workspace">
-          <Routes>
-            <Route path="/" element={<Navigate to="/create-plan" replace />} />
-            <Route path="/welcome" element={<LandingWorkspace onNav={(id) => navigate(pathFor(id))} onAuth={openAuth} />} />
-            <Route path="/auth" element={<AuthWorkspace mode={authMode} key={authMode} onDone={handleAuthed} />} />
-            <Route path="/create-plan" element={<CreatePlanWorkspace />} />
-            <Route path="/cad" element={<CadWorkspace />} />
-            <Route path="/generative" element={<GenerativeDesignWorkspace />} />
-            <Route path="/project/:projectId/survey" element={<SurveyWorkspace />} />
-            <Route path="/project/:projectId/analyze" element={<AnalysisWorkspace />} />
-            <Route path="/project/:projectId/boq" element={<BoqWorkspace />} />
-            <Route path="/project/:projectId/carbon" element={<CarbonWorkspace />} />
-            <Route path="/project/:projectId/validation" element={<ValidationWorkspace />} />
-            <Route path="/project/:projectId/3d" element={<Building3DWorkspace />} />
-            <Route path="/project/:projectId/collaboration" element={<CollaborationWorkspace />} />
-            <Route path="/project/:projectId/ecosystem" element={<EcosystemWorkspace />} />
-            <Route path="/project/:projectId/governance" element={<GovernanceWorkspace />} />
-            <Route path="/project/:projectId/review" element={<ReviewWorkspace />} />
-            <Route path="/project/:projectId/admin" element={<AdminWorkspace />} />
-            <Route path="/pricing" element={<PricingWorkspace />} />
-            <Route path="/blog" element={<BlogWorkspace />} />
-            <Route path="/faq" element={<FaqWorkspace />} />
-            <Route path="/case-studies" element={<CaseStudiesWorkspace />} />
-            <Route path="*" element={<Navigate to="/create-plan" replace />} />
-          </Routes>
+          <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/create-plan" replace />} />
+              <Route path="/welcome" element={<LandingWorkspace onNav={(id) => navigate(pathFor(id))} onAuth={openAuth} />} />
+              <Route path="/auth" element={<AuthWorkspace mode={authMode} key={authMode} onDone={handleAuthed} />} />
+              <Route path="/create-plan" element={<CreatePlanWorkspace />} />
+              <Route path="/cad" element={<CadWorkspace />} />
+              <Route path="/generative" element={<GenerativeDesignWorkspace />} />
+              <Route path="/project/:projectId/survey" element={<SurveyWorkspace />} />
+              <Route path="/project/:projectId/analyze" element={<AnalysisWorkspace />} />
+              <Route path="/project/:projectId/boq" element={<BoqWorkspace />} />
+              <Route path="/project/:projectId/carbon" element={<CarbonWorkspace />} />
+              <Route path="/project/:projectId/validation" element={<ValidationWorkspace />} />
+              <Route path="/project/:projectId/3d" element={<Building3DWorkspace />} />
+              <Route path="/project/:projectId/collaboration" element={<CollaborationWorkspace />} />
+              <Route path="/project/:projectId/ecosystem" element={<EcosystemWorkspace />} />
+              <Route path="/project/:projectId/governance" element={<GovernanceWorkspace />} />
+              <Route path="/project/:projectId/review" element={<ReviewWorkspace />} />
+              <Route path="/project/:projectId/admin" element={<AdminWorkspace />} />
+              <Route path="/pricing" element={<PricingWorkspace />} />
+              <Route path="/blog" element={<BlogWorkspace />} />
+              <Route path="/faq" element={<FaqWorkspace />} />
+              <Route path="/case-studies" element={<CaseStudiesWorkspace />} />
+              <Route path="*" element={<Navigate to="/create-plan" replace />} />
+            </Routes>
+          </Suspense>
         </section>
       </main>
     </div>

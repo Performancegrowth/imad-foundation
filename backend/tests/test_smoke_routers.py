@@ -42,18 +42,39 @@ def test_plans_templates_router_not_500(client):
     assert res.status_code < 500
 
 
-def test_validation_router_not_500(client):
+def test_validation_router_not_500(client, auth_headers):
     """Benchmark suite runs and the stored report is retrievable."""
-    run = client.post("/api/v1/validation/run", json={})
+    run = client.post("/api/v1/validation/run", json={}, headers=auth_headers)
     assert run.status_code < 500
-    report = client.get("/api/v1/validation/report")
+    report = client.get("/api/v1/validation/report", headers=auth_headers)
     assert report.status_code < 500
 
 
-def test_ecosystem_suppliers_not_500(client):
-    """Marketplace supplier directory should answer without auth."""
-    res = client.get("/api/v1/suppliers")
+def test_ecosystem_suppliers_not_500(client, auth_headers):
+    """Marketplace supplier directory should answer with a valid token."""
+    res = client.get("/api/v1/suppliers", headers=auth_headers)
     assert res.status_code < 500
+
+
+@pytest.fixture(scope="module")
+def owned_project(client, auth_headers):
+    """A real project owned by a real user (needed for routes that verify
+    project ownership). Registers a user first so the FK chain is valid."""
+    # Register a user so the project's owner_id references a real row.
+    email = "smoke-owner@imad.ai"
+    pw = "SmokePass1234!"
+    client.post("/api/v1/register", json={
+        "email": email, "password": pw, "full_name": "Smoke Owner",
+        "role": "engineer",
+    })
+    # Mint a token for whatever id the registration assigned.
+    owner_token = create_access_token(subject_id=1, email=email)
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    res = client.post("/api/v1/projects", headers=headers,
+                      json={"name": "smoke-owned-project",
+                            "description": "owner-scoped smoke fixture"})
+    assert res.status_code == 201, res.text
+    return int(res.json()["id"])
 
 
 _SMOKE_PLAN = {
@@ -72,13 +93,14 @@ _SMOKE_PLAN = {
 }
 
 
-def test_governance_compliance_not_500(client):
+def test_governance_compliance_not_500(client, auth_headers, owned_project):
     """Compliance engine accepts a minimal plan and returns a report."""
-    res = client.post("/api/v1/compliance/check", json={"plan": _SMOKE_PLAN})
+    res = client.post("/api/v1/compliance/check", headers=auth_headers,
+                      json={"project_id": owned_project, "plan": _SMOKE_PLAN})
     assert res.status_code < 500
 
 
-def test_governance_sbc304_package_not_500(client):
+def test_governance_sbc304_package_not_500(client, auth_headers, owned_project):
     """Sprint 10 package endpoint assembles the preliminary PDF package."""
     analysis = {
         "method": "equivalent-frame",
@@ -98,8 +120,9 @@ def test_governance_sbc304_package_not_500(client):
             ],
         },
     }
-    res = client.post("/api/v1/compliance/sbc304-package", json={
-        "project_id": 1,
+    res = client.post("/api/v1/compliance/sbc304-package", headers=auth_headers,
+                      json={
+        "project_id": owned_project,
         "project_name": "Smoke Package",
         "plan": _SMOKE_PLAN,
         "analysis": analysis,
@@ -120,11 +143,12 @@ def test_platform_analytics_not_500(client):
     assert res2.status_code < 500
 
 
-def test_governance_sbc304_package_auto_analysis(client):
+def test_governance_sbc304_package_auto_analysis(client, auth_headers, owned_project):
     """Homebuilder flow: no analysis supplied — the endpoint runs the
     authoritative engine itself and still produces the package PDF."""
-    res = client.post("/api/v1/compliance/sbc304-package", json={
-        "project_id": 1,
+    res = client.post("/api/v1/compliance/sbc304-package", headers=auth_headers,
+                      json={
+        "project_id": owned_project,
         "project_name": "Auto Analysis Package",
         "plan": _SMOKE_PLAN,
     })
@@ -146,20 +170,22 @@ def test_governance_readiness_checklist(client):
         assert body.get("status")
 
 
-def test_governance_submission_tracking_flow(client):
+def test_governance_submission_tracking_flow(client, auth_headers, owned_project):
     """Roadmap #16: dual-mode GET /submission/{ref} plus auditable status
     transitions. Numeric ref lists a project's packages (sorted), a
     submission id returns one record, and transitions append tracking
     events. Nothing 500s and invalid statuses are 422, never guessed."""
-    res = client.post("/api/v1/compliance/sbc304-package", json={
-        "project_id": 1,
+    res = client.post("/api/v1/compliance/sbc304-package", headers=auth_headers,
+                      json={
+        "project_id": owned_project,
         "project_name": "Tracking Flow",
         "plan": _SMOKE_PLAN,
     })
     assert res.status_code < 500
 
     # Numeric ref → project listing.
-    listing = client.get("/api/v1/submission/1")
+    listing = client.get(f"/api/v1/submission/{owned_project}",
+                         headers=auth_headers)
     assert listing.status_code == 200
     packages = listing.json().get("packages", [])
     assert isinstance(packages, list)
@@ -168,12 +194,15 @@ def test_governance_submission_tracking_flow(client):
         sub_id = packages[0]["id"]
 
         # Submission-id ref → single record detail.
-        detail = client.get(f"/api/v1/submission/{sub_id}")
+        detail = client.get(f"/api/v1/submission/{sub_id}",
+                            headers=auth_headers)
         assert detail.status_code == 200
         assert detail.json().get("id") == sub_id
 
         # A real-world transition appends an auditable tracking event.
-        tr = client.post(f"/api/v1/submission/{sub_id}/status", json={
+        tr = client.post(f"/api/v1/submission/{sub_id}/status",
+                         headers=auth_headers,
+                         json={
             "status": "submitted",
             "authority": "Baladiyah",
             "reference_number": "PRM-123",
@@ -186,27 +215,32 @@ def test_governance_submission_tracking_flow(client):
 
         # Invalid statuses are rejected by validation, never stored.
         bad = client.post(f"/api/v1/submission/{sub_id}/status",
+                          headers=auth_headers,
                           json={"status": "bogus"})
         assert bad.status_code == 422
 
     # Unknown submission id → 404, not 500.
-    assert client.get("/api/v1/submission/sub-doesnotexist").status_code == 404
+    assert client.get("/api/v1/submission/sub-doesnotexist",
+                     headers=auth_headers).status_code == 404
 
 
-def test_boq_xlsx_export_with_context(client):
+def test_boq_xlsx_export_with_context(client, auth_headers, owned_project):
     """Roadmap #18: the Excel export widens to Submission Summary, Material
     Certifications and Rates Comparison sheets using stored context. The
     endpoint must produce a real .xlsx file and never 500."""
     from pathlib import Path as _P
 
-    gen = client.post("/api/v1/generate-boq", json={
-        "project_id": 1, "project_name": "Xlsx Flow", "plan": _SMOKE_PLAN,
+    gen = client.post("/api/v1/generate-boq", headers=auth_headers,
+                      json={
+        "project_id": owned_project, "project_name": "Xlsx Flow",
+        "plan": _SMOKE_PLAN,
     })
     assert gen.status_code < 500
     rid = gen.json().get("result_id")
     assert rid
 
-    res = client.post(f"/api/v1/generate-boq/{rid}/export/xlsx")
+    res = client.post(f"/api/v1/generate-boq/{rid}/export/xlsx",
+                      headers=auth_headers)
     assert res.status_code < 500
     if res.status_code == 200:
         data = res.json()
@@ -214,26 +248,31 @@ def test_boq_xlsx_export_with_context(client):
         assert _P(data["file"]).exists()
 
     # Unknown result id → 404, not 500.
-    assert client.post("/api/v1/generate-boq/boq-nope/export/xlsx").status_code == 404
+    assert client.post("/api/v1/generate-boq/boq-nope/export/xlsx",
+                      headers=auth_headers).status_code == 404
 
 
-def test_submission_docx_export(client):
+def test_submission_docx_export(client, auth_headers, owned_project):
     """Roadmap #17: a generated SBC 304 package exports as an editable Word
     calculation note. The endpoint resolves the same stored inputs as the
     package flow, writes a real .docx and never 500s."""
     from pathlib import Path as _P
 
-    pkg = client.post("/api/v1/compliance/sbc304-package", json={
-        "project_id": 1, "project_name": "Docx Flow", "plan": _SMOKE_PLAN,
+    pkg = client.post("/api/v1/compliance/sbc304-package", headers=auth_headers,
+                      json={
+        "project_id": owned_project, "project_name": "Docx Flow",
+        "plan": _SMOKE_PLAN,
     })
     assert pkg.status_code < 500
 
-    listing = client.get("/api/v1/submission/1")
+    listing = client.get(f"/api/v1/submission/{owned_project}",
+                         headers=auth_headers)
     assert listing.status_code == 200
     packages = listing.json().get("packages", [])
     assert packages, "package generation should record a submission"
 
     res = client.post(f"/api/v1/submission/{packages[0]['id']}/export/docx",
+                      headers=auth_headers,
                       json={})
     assert res.status_code < 500
     if res.status_code == 200:
@@ -243,4 +282,5 @@ def test_submission_docx_export(client):
 
     # Unknown submission id → 404, not 500.
     assert client.post("/api/v1/submission/sub-nope/export/docx",
+                       headers=auth_headers,
                        json={}).status_code == 404

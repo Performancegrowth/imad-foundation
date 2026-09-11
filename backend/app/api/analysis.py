@@ -4,11 +4,15 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import jobs
+from app.core.database import get_session
+from app.core.dependencies import get_current_user, verify_project_owner
+from app.core.security import TokenPayload
 from app.core.storage import result_id, save_result
+from sqlalchemy.orm import Session
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
@@ -40,7 +44,8 @@ class AnalyzeResponse(BaseModel):
 
 
 @router.post("/analyze", summary="Run structural analysis on a plan")
-async def analyze(payload: AnalyzeRequest) -> Dict[str, Any]:
+async def analyze(payload: AnalyzeRequest, user: TokenPayload = Depends(get_current_user),
+                  db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Run the analysis and return the full result payload.
 
     Background execution (Redis queue + worker) is available by opting in with
@@ -48,6 +53,7 @@ async def analyze(payload: AnalyzeRequest) -> Dict[str, Any]:
     can be polled at ``GET /jobs/{job_id}``. Synchronous-by-default keeps the
     workspace UI simple: it renders whatever this call returns.
     """
+    verify_project_owner(payload.project_id, user, db)
     data = payload.model_dump()
     if (payload.options or {}).get("async"):
         return {"job_id": jobs.enqueue_job("analysis", data)}

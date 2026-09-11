@@ -3,32 +3,16 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import schemas
 from app.core.database import get_session
-from app.core.security import decode_access_token
+from app.core.dependencies import get_current_user
+from app.core.security import TokenPayload
 
 router = APIRouter()
-
-
-def _current_uid(authorization: str | None = Header(default=None)) -> int:
-    """Extract + decode a bearer token; return the authenticated user id."""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    if not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Malformed bearer token")
-    raw = authorization.split(" ", 1)[1].strip()
-    try:
-        return int(decode_access_token(raw).uid)
-    except Exception:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
 
 @router.get(
@@ -37,13 +21,13 @@ def _current_uid(authorization: str | None = Header(default=None)) -> int:
     summary="List the caller's projects",
 )
 async def list_projects(
-    owner_id: int = Depends(_current_uid),
+    user: TokenPayload = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
     """Return the current user's projects."""
     rows = db.execute(
         text("SELECT * FROM projects WHERE owner_id = :owner ORDER BY id"),
-        {"owner": owner_id},
+        {"owner": int(user.uid)},
     ).mappings().all()
     return [schemas.Project(**dict(r)) for r in rows]
 
@@ -56,7 +40,7 @@ async def list_projects(
 )
 async def create_project(
     payload: schemas.ProjectCreate,
-    owner_id: int = Depends(_current_uid),
+    user: TokenPayload = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
     """Create a project owned by the authenticated user."""
@@ -69,7 +53,7 @@ async def create_project(
             "        :lat, :lng, 'draft', :standard)"
         ),
         {
-            "owner": owner_id,
+            "owner": int(user.uid),
             "name": payload.name,
             "desc": payload.description,
             "code": payload.project_code,
@@ -94,13 +78,13 @@ async def create_project(
 )
 async def get_project(
     project_id: int,
-    owner_id: int = Depends(_current_uid),
+    user: TokenPayload = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
     """Return one of the caller's projects by id."""
     row = db.execute(
         text("SELECT * FROM projects WHERE id = :id AND owner_id = :owner"),
-        {"id": project_id, "owner": owner_id},
+        {"id": project_id, "owner": int(user.uid)},
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Project not found.")

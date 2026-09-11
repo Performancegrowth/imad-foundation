@@ -207,9 +207,13 @@ def test_sections_api_analyze_and_validation():
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.core.security import create_access_token
+
+    token = create_access_token(subject_id=1, email="sections@imad.ai")
+    headers = {"Authorization": f"Bearer {token}"}
 
     with TestClient(app) as client:
-        res = client.post("/api/v1/sections/analyze",
+        res = client.post("/api/v1/sections/analyze", headers=headers,
                           json={"section": {"shape": "rect", "b": 300, "d": 500},
                                 "material": {"name": "S355"}})
         assert res.status_code == 200
@@ -218,6 +222,6 @@ def test_sections_api_analyze_and_validation():
         assert body["area_mm2"] == pytest.approx(150_000.0)
         assert body["capacities"]["n_pl_kN"] == pytest.approx(53_250.0, rel=1e-3)
 
-        bad = client.post("/api/v1/sections/analyze",
+        bad = client.post("/api/v1/sections/analyze", headers=headers,
                           json={"section": {"shape": "rect", "b": -1, "d": 500}})
         assert bad.status_code == 422

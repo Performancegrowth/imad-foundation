@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Dict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.storage import load_upload, result_id, save_result
@@ -14,6 +14,8 @@ from app.services.cad_processor import (
     CADProcessor,
     get_cad_processor,
 )
+from app.core.dependencies import get_current_user
+from app.core.security import TokenPayload
 
 log = logging.getLogger("imad.api.cad")
 
@@ -34,7 +36,7 @@ class ProcessResponse(BaseModel):
 
 
 @router.post("/process-cad", response_model=ProcessResponse, summary="Extract structure from a design file")
-async def process_cad(payload: ProcessRequest):
+async def process_cad(payload: ProcessRequest, user: TokenPayload = Depends(get_current_user)):
     """Parse an uploaded CAD/image file into shared plan geometry."""
     meta = load_upload(payload.file_id)
     if not meta:

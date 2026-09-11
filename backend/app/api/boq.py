@@ -5,17 +5,21 @@ import logging
 import mimetypes
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core import jobs
+from app.core.database import get_session
+from app.core.dependencies import get_current_user, verify_project_owner
 from app.core.docstore import collection
 from app.core.storage import list_results, load_result, result_id, save_result
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
 from app.services.boq_generator import BOQError, boq_pdf, boq_xlsx, generate_boq
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
+from app.core.security import TokenPayload
+from sqlalchemy.orm import Session
 
 log = logging.getLogger("imad.api.boq")
 router = APIRouter()
@@ -59,10 +63,12 @@ def _resolve_survey(payload: GenerateBOQRequest) -> Optional[SurveyReading]:
 
 
 @router.post("/generate-boq", summary="Generate a detailed BOQ + BBS")
-async def generate(payload: GenerateBOQRequest) -> Dict[str, Any]:
+async def generate(payload: GenerateBOQRequest, user: TokenPayload = Depends(get_current_user),
+                   db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Run synchronously by default so callers get the full BOQ payload (same
     contract as /analyze). Background execution (Redis + worker) is an explicit
     opt-in via ``options: {"async": true}`` — the response then carries a job_id."""
+    verify_project_owner(payload.project_id, user, db)
     data = payload.model_dump()
     if (payload.options or {}).get("async"):
         return {"job_id": jobs.enqueue_job("boq", data)}

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.section_designer import (
@@ -19,6 +19,8 @@ from app.services.section_designer import (
     SectionDesigner,
     SectionDesignError,
 )
+from app.core.dependencies import get_current_user
+from app.core.security import TokenPayload
 
 log = logging.getLogger("imad.api.sections")
 router = APIRouter()
@@ -46,7 +48,7 @@ def _resolve_material(material: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
 
 
 @router.post("/sections/analyze", summary="Cross-section properties & capacities")
-async def analyze_section(payload: SectionRequest) -> Dict[str, Any]:
+async def analyze_section(payload: SectionRequest, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     """Compute geometric + plastic section properties for one section."""
     try:
         props = _designer.analyze(

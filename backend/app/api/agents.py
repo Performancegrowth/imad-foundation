@@ -8,9 +8,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.dependencies import get_current_user
 from app.services.agents import (
     AgentError,
     marketing_content,
@@ -19,7 +20,8 @@ from app.services.agents import (
 )
 
 log = logging.getLogger("imad.api.agents")
-router = APIRouter()
+# AuthZ: agents consume LLM cycles on the local Ollama deployment.
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class SalesRequest(BaseModel):
@@ -56,7 +58,6 @@ async def marketing(payload: MarketingRequest) -> Dict[str, Any]:
 
 
 @router.post("/agents/support", summary="Support chatbot reply")
-@router.post("/support/chat", include_in_schema=False)   # Sprint 14 alias
 async def support(payload: SupportRequest) -> Dict[str, Any]:
     try:
         return await support_reply(payload.question, payload.history)

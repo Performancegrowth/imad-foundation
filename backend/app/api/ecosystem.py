@@ -15,11 +15,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core import audit
+from app.core.database import get_session
+from app.core.dependencies import get_current_user, verify_project_owner
 from app.core.docstore import collection
+from app.core.security import TokenPayload
 from app.models.business import (
     Certification,
     Consultant,
@@ -28,9 +31,13 @@ from app.models.business import (
     DesignDataSnapshot,
     Supplier,
 )
+from sqlalchemy.orm import Session
 
 log = logging.getLogger("imad.api.ecosystem")
-router = APIRouter()
+# AuthZ: every marketplace/analytics route requires a bearer token. Records in
+# the docstore carry no owner column yet, so scoping by owner is N/A — the
+# token proves identity; per-project scoping lands with the docstore migration.
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def _now() -> str:
@@ -296,7 +303,9 @@ async def request_review(payload: ReviewRequestIn) -> Dict[str, Any]:
 
 @router.get("/consultants/requests/{project_id}",
             summary="List review requests for a project")
-async def review_requests(project_id: int) -> Dict[str, Any]:
+async def review_requests(project_id: int, user: TokenPayload = Depends(get_current_user),
+                          db: Session = Depends(get_session)) -> Dict[str, Any]:
+    verify_project_owner(project_id, user, db)
     docs = collection("consultant_requests").list(
         lambda d: int(d.get("project_id") or 0) == project_id)
     return {"count": len(docs), "requests": docs}

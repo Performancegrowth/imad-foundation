@@ -5,31 +5,22 @@ generative design) is dispatched to a queue and completed by the worker
 service. These endpoints let clients poll for progress and retrieve the
 final JSON result.
 
-Routes:
-    GET /api/jobs/{job_id}         → status + progress + error
+Routes (the full job-status shape lives in platform.py — registered first,
+so only this ``/result`` route is unique to this module):
     GET /api/jobs/{job_id}/result  → completed payload (409 if still running)
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core import jobs
+from app.core.dependencies import get_current_user
 
 router = APIRouter()
 
-_FIELDS = ("id", "kind", "status", "progress", "error", "created_at", "updated_at")
-
-
-@router.get("/jobs/{job_id}", summary="Poll a background job's status")
-async def job_status(job_id: str) -> dict:
-    job = jobs.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")
-    return {key: job.get(key) for key in _FIELDS}
-
 
 @router.get("/jobs/{job_id}/result", summary="Fetch a completed job's result")
-async def job_result(job_id: str) -> dict:
+async def job_result(job_id: str, user=Depends(get_current_user)) -> dict:
     job = jobs.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")

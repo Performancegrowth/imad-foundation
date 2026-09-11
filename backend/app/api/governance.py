@@ -6,12 +6,16 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core import audit
+from app.core.dependencies import get_current_user, require_owner, verify_project_owner
 from app.core.docstore import collection
 from app.core.storage import list_results, load_result
+from app.core.security import TokenPayload
+from sqlalchemy.orm import Session
+from app.core.database import get_session
 from app.services.boq_generator import generate_boq
 from app.services.compliance_engine import ComplianceEngine
 from app.services.exporters import (ExportError, build_pdf_report, exports_dir,
@@ -63,7 +67,9 @@ class SubmissionStatusBody(BaseModel):
 
 
 @router.post("/compliance/check", summary="Run SBC 304 code-compliance checks")
-async def compliance_check(payload: ComplianceRequest) -> Dict[str, Any]:
+async def compliance_check(payload: ComplianceRequest, user: TokenPayload = Depends(get_current_user),
+                           db: Session = Depends(get_session)) -> Dict[str, Any]:
+    verify_project_owner(payload.project_id, user, db)
     plan = _resolve_plan(payload.plan_name, payload.plan)
     engine = ComplianceEngine(plan, analysis=payload.analysis, survey=payload.survey)
     report = engine.run_all()
@@ -91,7 +97,8 @@ class SBCPackageRequest(BaseModel):
 
 @router.post("/compliance/sbc304-package",
              summary="Generate the preliminary SBC 304 calculation package (PDF)")
-async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
+async def sbc304_package(payload: SBCPackageRequest, user: TokenPayload = Depends(get_current_user),
+                         db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Assemble the Sprint 10 calculation package from engine outputs.
 
     The report builder only formats results; this endpoint resolves inputs:
@@ -99,6 +106,7 @@ async def sbc304_package(payload: SBCPackageRequest) -> Dict[str, Any]:
     id), survey (inline, or the project's recorded survey), compliance
     (always recomputed by the authoritative engine) and an optional BOQ.
     """
+    verify_project_owner(payload.project_id, user, db)
     plan = _resolve_plan(payload.plan_name, payload.plan)
 
     analysis = payload.analysis
@@ -204,6 +212,7 @@ class SubmissionDocxBody(BaseModel):
                      "calculation note (roadmap #17)")
 async def submission_docx_export(
     submission_id: str, body: Optional[SubmissionDocxBody] = None,
+    user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """The working companion to the sealed SBC 304 PDF.
 
@@ -314,7 +323,7 @@ async def submission_docx_export(
 
 @router.get("/compliance/sbc304-readiness/{project_id}",
             summary="Submission-readiness checklist for the SBC 304 package")
-async def sbc304_readiness(project_id: int) -> Dict[str, Any]:
+async def sbc304_readiness(project_id: int, user: TokenPayload = Depends(require_owner)) -> Dict[str, Any]:
     """Report what exists for this project versus what the SBC 304
     submission path needs.
 
@@ -423,7 +432,9 @@ async def sbc304_readiness(project_id: int) -> Dict[str, Any]:
 
 
 @router.post("/signature/request", summary="Approve & sign — request engineer signature")
-async def signature_request(payload: SignatureRequestBody) -> Dict[str, Any]:
+async def signature_request(payload: SignatureRequestBody, user: TokenPayload = Depends(get_current_user),
+                            db: Session = Depends(get_session)) -> Dict[str, Any]:
+    verify_project_owner(payload.project_id, user, db)
     if payload.actor_role not in SIGNING_ROLES:
         raise HTTPException(status_code=403,
                             detail="Only licensed engineers may request signatures.")
@@ -443,7 +454,7 @@ async def signature_request(payload: SignatureRequestBody) -> Dict[str, Any]:
 
 
 @router.get("/signature/{signature_id}", summary="Signature request status")
-async def signature_status(signature_id: str) -> Dict[str, Any]:
+async def signature_status(signature_id: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     record = _signatures.get(signature_id)
     if not record:
         raise HTTPException(status_code=404, detail="Signature request not found.")
@@ -452,7 +463,8 @@ async def signature_status(signature_id: str) -> Dict[str, Any]:
 
 @router.post("/signature/{signature_id}/complete",
              summary="Webhook completion from the e-sign provider (placeholder)")
-async def signature_complete(signature_id: str, body: SignatureCompleteBody) -> Dict[str, Any]:
+async def signature_complete(signature_id: str, body: SignatureCompleteBody,
+                             user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     existing = _signatures.get(signature_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Signature request not found.")
@@ -468,7 +480,7 @@ async def signature_complete(signature_id: str, body: SignatureCompleteBody) -> 
 @router.get("/submission/{ref}",
             summary="List a project's submissions (numeric project id) "
                     "or get one submission's details (submission id)")
-async def submission_ref(ref: str) -> Dict[str, Any]:
+async def submission_ref(ref: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     """Dual-mode per the roadmap #16 contract.
 
     ``/submission/{project_id}`` (digits) lists that project's packages,
@@ -492,6 +504,7 @@ async def submission_ref(ref: str) -> Dict[str, Any]:
              summary="Record a submission status transition (municipality tracking)")
 async def submission_transition(
     submission_id: str, body: SubmissionStatusBody,
+    user: TokenPayload = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Append an auditable tracking event and update the record's status.
 
@@ -535,8 +548,11 @@ async def submission_transition(
 
 @router.post("/submission/generate", summary="Build a municipality-ready submission PDF")
 async def submission_generate(payload: ComplianceRequest,
-                              signed_by: Optional[str] = None) -> Dict[str, Any]:
+                              signed_by: Optional[str] = None,
+                              user: TokenPayload = Depends(get_current_user),
+                              db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Combine calculation note, compliance report and project info into one PDF."""
+    verify_project_owner(payload.project_id, user, db)
     plan = _resolve_plan(payload.plan_name, payload.plan)
     report = ComplianceEngine(plan, analysis=payload.analysis,
                               survey=payload.survey).run_all()
@@ -600,7 +616,7 @@ async def submission_generate(payload: ComplianceRequest,
 
 
 @router.get("/audit-log/{project_id}", summary="Immutable audit trail (read-only)")
-async def audit_trail(project_id: int, limit: int = 200) -> Dict[str, Any]:
+async def audit_trail(project_id: int, user: TokenPayload = Depends(require_owner), limit: int = 200) -> Dict[str, Any]:
     entries = audit.list_log(project_id=project_id, limit=min(limit, 1000))
     integrity = audit.verify_chain()
     return {"project_id": project_id, "entries": entries,

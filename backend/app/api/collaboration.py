@@ -10,12 +10,16 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core import audit
+from app.core.database import get_session
+from app.core.dependencies import get_current_user, verify_project_owner
 from app.core.docstore import collection
+from app.core.security import TokenPayload
+from sqlalchemy.orm import Session
 from app.models.business import ApprovalState
 from app.models.plan_data import PlanData
 from app.services import bim_service
@@ -49,7 +53,9 @@ class IfcExportRequest(BaseModel):
 
 
 @router.post("/ifc/export", summary="Export a plan as an IFC4 STEP file")
-async def ifc_export(payload: IfcExportRequest):
+async def ifc_export(payload: IfcExportRequest, user: TokenPayload = Depends(get_current_user),
+                     db: Session = Depends(get_session)):
+    verify_project_owner(payload.project_id, user, db)
     try:
         plan = (PlanData(**payload.plan) if payload.plan
                 else PlanGenerator.load_plan(payload.project_id, payload.plan_name or ""))
@@ -67,7 +73,7 @@ async def ifc_export(payload: IfcExportRequest):
 
 
 @router.post("/ifc/import", summary="Import an IFC file and extract structural elements")
-async def ifc_import(file: UploadFile = File(...)):
+async def ifc_import(file: UploadFile = File(...), user: TokenPayload = Depends(get_current_user)):
     from app.core.storage import save_bytes
 
     raw = await file.read()
@@ -98,12 +104,20 @@ class IssueCreate(BaseModel):
 
 
 @router.get("/bcf/issues", summary="List BCF coordination issues")
-async def issues_list(project_id: int = 1, status: Optional[str] = None):
+async def issues_list(project_id: int = 1, status: Optional[str] = None, user: TokenPayload = Depends(get_current_user),
+                      db: Session = Depends(get_session)):
+    verify_project_owner(project_id, user, db)
     return {"issues": bim_service.list_issues(project_id, status)}
 
 
 @router.post("/bcf/issues", summary="Open a BCF coordination issue")
-async def issues_create(payload: IssueCreate):
+async def issues_create(payload: IssueCreate, user: TokenPayload = Depends(get_current_user),
+                        db: Session = Depends(get_session)):
+    verify_project_owner(payload.project_id, user, db)
+    issue = bim_service.create_issue(payload.project_id, payload.title, payload.body,
+                                     payload.author, payload.element_ref, payload.position)
+    audit.log_action("bcf_issue_created", project_id=payload.project_id)
+    return issue
     issue = bim_service.create_issue(
         payload.project_id, payload.title, payload.body, payload.author,
         payload.element_ref, payload.position)
@@ -113,7 +127,7 @@ async def issues_create(payload: IssueCreate):
 
 
 @router.patch("/bcf/issues/{issue_id}", summary="Update issue status/fields")
-async def issues_update(issue_id: str, body: Dict[str, Any]):
+async def issues_update(issue_id: str, body: Dict[str, Any], user: TokenPayload = Depends(get_current_user)):
     updated = bim_service.update_issue(issue_id, **body)
     if not updated:
         raise HTTPException(status_code=404, detail="Issue not found.")
@@ -130,7 +144,13 @@ class CommentCreate(BaseModel):
 
 
 @router.get("/comments", summary="List comments for a project/target")
-async def comments_list(project_id: int = 1, target_id: Optional[str] = None):
+async def comments_list(project_id: int = 1, target_id: Optional[str] = None, user: TokenPayload = Depends(get_current_user),
+                        db: Session = Depends(get_session)):
+    verify_project_owner(project_id, user, db)
+    docs = collection("comments").list(lambda d: d.get("project_id") == project_id)
+    if target_id:
+        docs = [d for d in docs if d.get("target_id") == target_id]
+    return {"comments": sorted(docs, key=lambda d: d.get("created_at", ""))}
     docs = collection("comments").list(lambda d: d.get("project_id") == project_id)
     if target_id:
         docs = [d for d in docs if d.get("target_id") == target_id]
@@ -138,14 +158,16 @@ async def comments_list(project_id: int = 1, target_id: Optional[str] = None):
 
 
 @router.post("/comments", summary="Add a comment")
-async def comments_create(payload: CommentCreate):
+async def comments_create(payload: CommentCreate, user: TokenPayload = Depends(get_current_user),
+                          db: Session = Depends(get_session)):
+    verify_project_owner(payload.project_id, user, db)
     doc = collection("comments").put(payload.model_dump(), prefix="cmt")
     audit.log_action("comment_added", project_id=payload.project_id)
     return doc
 
 
 @router.patch("/comments/{comment_id}/resolve", summary="Mark comment resolved")
-async def comments_resolve(comment_id: str):
+async def comments_resolve(comment_id: str, user: TokenPayload = Depends(get_current_user)):
     doc = collection("comments").update(comment_id, resolved=True)
     if not doc:
         raise HTTPException(status_code=404, detail="Comment not found.")
@@ -166,13 +188,17 @@ class ApprovalTransition(BaseModel):
 
 
 @router.get("/approvals", summary="List approval workflows")
-async def approvals_list(project_id: int = 1):
+async def approvals_list(project_id: int = 1, user: TokenPayload = Depends(get_current_user),
+                         db: Session = Depends(get_session)):
+    verify_project_owner(project_id, user, db)
     docs = collection("approvals").list(lambda d: d.get("project_id") == project_id)
     return {"approvals": docs}
 
 
 @router.post("/approvals", summary="Start an approval workflow", status_code=201)
-async def approvals_create(payload: ApprovalCreate):
+async def approvals_create(payload: ApprovalCreate, user: TokenPayload = Depends(get_current_user),
+                           db: Session = Depends(get_session)):
+    verify_project_owner(payload.project_id, user, db)
     existing = collection("approvals").list(
         lambda d: d.get("subject_id") == payload.subject_id
         and d.get("subject_kind") == payload.subject_kind)
@@ -188,7 +214,7 @@ async def approvals_create(payload: ApprovalCreate):
 
 
 @router.post("/approvals/{approval_id}/transition", summary="Move approval to next state")
-async def approvals_transition(approval_id: str, payload: ApprovalTransition):
+async def approvals_transition(approval_id: str, payload: ApprovalTransition, user: TokenPayload = Depends(get_current_user)):
     doc = collection("approvals").get(approval_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Approval not found.")
@@ -234,14 +260,18 @@ class TaskMove(BaseModel):
 
 
 @router.get("/tasks", summary="List project tasks for the kanban board")
-async def tasks_list(project_id: int = 1):
+async def tasks_list(project_id: int = 1, user: TokenPayload = Depends(get_current_user),
+                     db: Session = Depends(get_session)):
+    verify_project_owner(project_id, user, db)
     docs = collection("tasks").list(lambda d: d.get("project_id") == project_id)
     docs.sort(key=lambda d: (d.get("order", 0), d.get("created_at", "")))
     return {"tasks": docs, "states": list(TASK_STATES)}
 
 
 @router.post("/tasks", summary="Create a task", status_code=201)
-async def tasks_create(payload: TaskCreate):
+async def tasks_create(payload: TaskCreate, user: TokenPayload = Depends(get_current_user),
+                       db: Session = Depends(get_session)):
+    verify_project_owner(payload.project_id, user, db)
     if payload.state not in TASK_STATES:
         raise HTTPException(status_code=422,
                             detail=f"state must be one of {TASK_STATES}")
@@ -253,7 +283,7 @@ async def tasks_create(payload: TaskCreate):
 
 
 @router.patch("/tasks/{task_id}/move", summary="Drag-and-drop move between states")
-async def tasks_move(task_id: str, payload: TaskMove):
+async def tasks_move(task_id: str, payload: TaskMove, user: TokenPayload = Depends(get_current_user)):
     if payload.state not in TASK_STATES:
         raise HTTPException(status_code=422,
                             detail=f"state must be one of {TASK_STATES}")
@@ -265,7 +295,7 @@ async def tasks_move(task_id: str, payload: TaskMove):
 
 
 @router.delete("/tasks/{task_id}", summary="Delete a task")
-async def tasks_delete(task_id: str):
+async def tasks_delete(task_id: str, user: TokenPayload = Depends(get_current_user)):
     if not collection("tasks").delete(task_id):
         raise HTTPException(status_code=404, detail="Task not found.")
     return {"deleted": task_id}
@@ -273,7 +303,10 @@ async def tasks_delete(task_id: str):
 
 # ── Notifications ────────────────────────────────────────────────────────────
 @router.get("/notifications", summary="List notifications (newest first)")
-async def notifications_list(project_id: Optional[int] = None, unread_only: bool = False):
+async def notifications_list(project_id: Optional[int] = None, unread_only: bool = False, user: TokenPayload = Depends(get_current_user),
+                             db: Session = Depends(get_session)):
+    if project_id is not None:
+        verify_project_owner(project_id, user, db)
     docs = collection("notifications").list()
     if project_id is not None:
         docs = [d for d in docs if d.get("project_id") in (None, project_id)]
@@ -285,7 +318,7 @@ async def notifications_list(project_id: Optional[int] = None, unread_only: bool
 
 @router.post("/notifications/{notification_id}/read",
              summary="Mark a notification as read")
-async def notifications_read(notification_id: str):
+async def notifications_read(notification_id: str, user: TokenPayload = Depends(get_current_user)):
     doc = collection("notifications").update(notification_id, read=True)
     if not doc:
         raise HTTPException(status_code=404, detail="Notification not found.")
@@ -300,7 +333,7 @@ class WebhookCreate(BaseModel):
 
 
 @router.get("/webhooks", summary="List registered plugin webhooks")
-async def webhooks_list():
+async def webhooks_list(user: TokenPayload = Depends(get_current_user)):
     docs = collection("webhooks").list()
     # Never expose raw secrets through the API.
     return {"webhooks": [{k: v for k, v in d.items() if k != "secret"} for d in docs]}
@@ -308,7 +341,7 @@ async def webhooks_list():
 
 @router.post("/webhooks", summary="Register a webhook for external integrations",
              status_code=201)
-async def webhooks_create(payload: WebhookCreate):
+async def webhooks_create(payload: WebhookCreate, user: TokenPayload = Depends(get_current_user)):
     if not payload.url.lower().startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="url must be http(s).")
     import secrets as _secrets
@@ -327,7 +360,7 @@ async def webhooks_create(payload: WebhookCreate):
 
 
 @router.delete("/webhooks/{webhook_id}", summary="Remove a webhook")
-async def webhooks_delete(webhook_id: str):
+async def webhooks_delete(webhook_id: str, user: TokenPayload = Depends(get_current_user)):
     if not collection("webhooks").delete(webhook_id):
         raise HTTPException(status_code=404, detail="Webhook not found.")
     return {"deleted": webhook_id}

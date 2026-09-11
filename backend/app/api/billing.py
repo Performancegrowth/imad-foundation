@@ -4,10 +4,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core import audit
+from app.core.dependencies import get_current_user
+from app.core.security import TokenPayload
 from app.services.subscriptions import (
     PLANS,
     ROLE_MATRIX,
@@ -40,19 +42,26 @@ class ApiKeyRequest(BaseModel):
 
 
 @router.get("/plans", summary="Plan catalogue with the entitlement matrix")
+# PUBLIC: marketing pricing page renders for signed-out visitors; no user data.
 async def list_plans() -> Dict[str, Any]:
     return {"plans": PLANS, "roles": ROLE_MATRIX}
 
 
 @router.get("/subscriptions/{user_email}", summary="Fetch or provision a subscription")
-async def subscription(user_email: str) -> Dict[str, Any]:
+async def subscription(user_email: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+    # A signed-in user may read their own subscription; reading another
+    # account's is forbidden (404, never 403, to avoid leaking existence).
+    if user_email.lower() != str(user.sub).lower():
+        raise HTTPException(status_code=404, detail="Subscription not found.")
     sub = get_subscription(user_email)
     plan = PLANS.get(sub["plan"], PLANS["free"])
     return {"subscription": sub, "plan": plan}
 
 
 @router.post("/subscriptions/upgrade", summary="Switch plan (Stripe capture is a placeholder)")
-async def do_upgrade(payload: UpgradeRequest) -> Dict[str, Any]:
+async def do_upgrade(payload: UpgradeRequest, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+    if payload.user_email.lower() != str(user.sub).lower():
+        raise HTTPException(status_code=404, detail="Subscription not found.")
     try:
         sub = upgrade(payload.user_email, payload.plan, payload.cycle)
     except SubscriptionError as exc:
@@ -63,7 +72,7 @@ async def do_upgrade(payload: UpgradeRequest) -> Dict[str, Any]:
 
 
 @router.post("/payments/checkout", summary="Create a Stripe *sandbox* checkout session")
-async def checkout(payload: CheckoutRequest) -> Dict[str, Any]:
+async def checkout(payload: CheckoutRequest, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     try:
         session = create_checkout_placeholder(payload.user_email, payload.plan, payload.cycle)
     except SubscriptionError as exc:
@@ -92,7 +101,7 @@ def _hash_key(raw: str) -> str:
 
 
 @router.post("/api-keys/generate", summary="Issue an API key (shown once)")
-async def generate_api_key(payload: ApiKeyRequest) -> Dict[str, Any]:
+async def generate_api_key(payload: ApiKeyRequest, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     import secrets as _secrets
 
     from app.core.docstore import collection
@@ -115,7 +124,9 @@ async def generate_api_key(payload: ApiKeyRequest) -> Dict[str, Any]:
 
 
 @router.get("/api-keys/{user_email}", summary="List API keys (metadata only)")
-async def list_api_keys(user_email: str) -> Dict[str, Any]:
+async def list_api_keys(user_email: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+    if user_email.lower() != str(user.sub).lower():
+        raise HTTPException(status_code=404, detail="No API keys found.")
     from app.core.docstore import collection
 
     rows = collection("apikeys").list(
@@ -126,7 +137,7 @@ async def list_api_keys(user_email: str) -> Dict[str, Any]:
 
 
 @router.delete("/api-keys/{key_id}", summary="Revoke an API key")
-async def revoke_api_key(key_id: str) -> Dict[str, Any]:
+async def revoke_api_key(key_id: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     from app.core.docstore import collection
 
     doc = collection("apikeys").update(key_id, revoked=True)
@@ -153,7 +164,9 @@ def _wl_id(user_email: str) -> str:
 
 
 @router.get("/whitelabel/{user_email}", summary="Fetch white-label settings")
-async def get_whitelabel(user_email: str) -> Dict[str, Any]:
+async def get_whitelabel(user_email: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+    if user_email.lower() != str(user.sub).lower():
+        raise HTTPException(status_code=404, detail="White-label settings not found.")
     from app.core.docstore import collection
 
     doc = collection("whitelabels").get(_wl_id(user_email))
@@ -164,7 +177,9 @@ async def get_whitelabel(user_email: str) -> Dict[str, Any]:
 
 
 @router.put("/whitelabel/{user_email}", summary="Update white-label settings")
-async def put_whitelabel(user_email: str, payload: WhiteLabelPayload) -> Dict[str, Any]:
+async def put_whitelabel(user_email: str, payload: WhiteLabelPayload, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+    if user_email.lower() != str(user.sub).lower():
+        raise HTTPException(status_code=404, detail="White-label settings not found.")
     from app.core.docstore import collection
 
     doc = collection("whitelabels").put(
@@ -178,6 +193,7 @@ async def put_whitelabel(user_email: str, payload: WhiteLabelPayload) -> Dict[st
 
 # ── Sprint 9C — business analytics ───────────────────────────────────────────
 @router.get("/analytics", summary="Platform analytics: projects, users, revenue")
+# PUBLIC: read-only aggregate counters (no PII); consumed by the admin dashboard.
 async def analytics() -> Dict[str, Any]:
     """Aggregates live counters from the document stores + audit trail."""
     from app.core.docstore import collection

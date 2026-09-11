@@ -13,11 +13,15 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core import audit
+from app.core.database import get_session
+from app.core.dependencies import get_current_user, verify_project_owner
 from app.core.jobs import get_job, new_job, run_in_background, update_job
+from app.core.security import TokenPayload
+from sqlalchemy.orm import Session
 from app.services.ai_provider import (
     AIProviderError,
     BaseMessage,
@@ -62,8 +66,12 @@ class SelectRequest(BaseModel):
 
 
 @router.post("/generate-designs", summary="Generate structural design alternatives (NSGA-II)")
-async def generate_designs(payload: GenerateRequest) -> Dict[str, Any]:
+async def generate_designs(payload: GenerateRequest, user: TokenPayload = Depends(get_current_user),
+                           db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Kick off a generative run in a background worker thread."""
+    if payload.project_id:
+        # Resolve against a saved plan the caller owns (foreign ids → 404).
+        verify_project_owner(payload.project_id, user, db)
     # Resolve dimensions: explicit values win, else load from a saved plan.
     length_m = payload.length_m
     width_m = payload.width_m
@@ -121,11 +129,16 @@ async def generate_designs(payload: GenerateRequest) -> Dict[str, Any]:
 
 
 @router.get("/generate-designs/status/{job_id}", summary="Poll generative job status")
+async def generation_status(job_id: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")
+    return job
 
 
 @router.get("/generate-designs/{job_id}/recommendation",
             summary="AI recommendation narrative for the ranked options")
-async def recommendation(job_id: str) -> Dict[str, Any]:
+async def recommendation(job_id: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     """Ask the local LLM for a short engineering narrative.
 
     Falls back to deterministic rule-based text whenever Ollama is unreachable —
@@ -177,7 +190,9 @@ def _rule_based(options: List[Dict[str, Any]]) -> str:
 
 
 @router.post("/generate-designs/select", summary="Persist a chosen option as a saved plan")
-async def select_option(payload: SelectRequest) -> Dict[str, Any]:
+async def select_option(payload: SelectRequest, user: TokenPayload = Depends(get_current_user),
+                        db: Session = Depends(get_session)) -> Dict[str, Any]:
+    verify_project_owner(payload.project_id, user, db)
     job = get_job(payload.job_id)
     if not job or job.get("status") != "completed":
         raise HTTPException(status_code=409, detail="Job is not completed yet.")
@@ -198,8 +213,3 @@ async def select_option(payload: SelectRequest) -> Dict[str, Any]:
     audit.log_action("generative_option_selected", project_id=payload.project_id,
                      details={"option_id": payload.option_id, "plan": name})
     return {"saved": saved, "fitness": chosen["fitness"]}
-async def generation_status(job_id: str) -> Dict[str, Any]:
-    job = get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")
-    return job

@@ -1,9 +1,11 @@
 """Design file upload endpoint (Sprint 2)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from app.core.storage import save_upload
+from app.core.dependencies import get_current_user
+from app.core.security import TokenPayload
 
 router = APIRouter()
 
@@ -11,7 +13,7 @@ ALLOWED = {".dxf", ".dwg", ".ifc", ".obj", ".png", ".jpg", ".jpeg", ".tiff", ".t
 
 
 @router.post("/upload", summary="Upload a CAD or image design file")
-async def upload_file(file: UploadFile):
+async def upload_file(file: UploadFile, user: TokenPayload = Depends(get_current_user)):
     """Persist the upload and return its ``file_id`` for processing."""
     filename = (file.filename or "").strip()
     ext = f".{filename.rsplit('.', 1)[-1].lower()}" if "." in filename else ""

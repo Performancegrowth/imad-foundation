@@ -4,10 +4,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import jobs
+from app.core.database import get_session
+from app.core.dependencies import get_current_user, verify_project_owner
 from app.core.storage import result_id, save_result
 from app.services.boq_generator import BOQError, generate_boq
 from app.services.carbon_calculator import (
@@ -22,6 +24,8 @@ from app.services.carbon_calculator import (
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
+from app.core.security import TokenPayload
+from sqlalchemy.orm import Session
 
 log = logging.getLogger("imad.api.carbon")
 router = APIRouter()
@@ -58,10 +62,12 @@ async def _build(boq: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.post("/carbon-report", summary="Full embodied-carbon report from a plan or BOQ")
-async def carbon_report(payload: CarbonReportRequest) -> Dict[str, Any]:
+async def carbon_report(payload: CarbonReportRequest, user: TokenPayload = Depends(get_current_user),
+                        db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Run synchronously by default so callers get the full report payload (same
     contract as /analyze and /generate-boq). Background execution is an explicit
     opt-in via ``options: {"async": true}`` — response then carries a job_id."""
+    verify_project_owner(payload.project_id, user, db)
     data = payload.model_dump()
     if (payload.options or {}).get("async"):
         return {"job_id": jobs.enqueue_job("carbon", data)}
@@ -112,7 +118,7 @@ async def run_carbon(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.post("/carbon-report/lca-pdf", summary="Render the LCA report as PDF")
-async def export_lca(report: Dict[str, Any]) -> Dict[str, Any]:
+async def export_lca(report: Dict[str, Any], user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     """Accepts the payload returned by ``/carbon-report`` plus boq_totals."""
     boq_totals = report.get("boq_totals") or {}
     fake_boq = {"project_name": report.get("project_name", "Imad Project"),

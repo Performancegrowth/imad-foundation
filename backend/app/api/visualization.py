@@ -10,15 +10,18 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.dependencies import get_current_user
 from app.core.storage import result_id, save_result, list_results, load_result
 from app.models.plan_data import PlanData
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
 
 log = logging.getLogger("imad.api.visualization")
-router = APIRouter()
+# AuthZ: 3D scenes expose the caller's designed structure — require a token.
+# Docstore/results carry no owner column yet; the token proves identity.
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class BuildingSceneRequest(BaseModel):

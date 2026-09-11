@@ -7,15 +7,13 @@ or modify another user's plans.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 
-from app.core.database import get_session
-from app.core.security import get_current_user
+from app.core.dependencies import get_current_user, require_owner
+from app.core.security import TokenPayload
 from app.models.plan_data import PlanData
 from app.services.noncad_processor import (
     PlanGenerationError,
@@ -26,7 +24,7 @@ from app.services.noncad_processor import (
 log = logging.getLogger("imad.api.plans")
 # NOTE: no router-level auth dependency — /templates is intentionally public
 # (templates are not user-specific); every data-bearing route below declares
-# its own ``Depends(_current_uid)`` guard.
+# its own ``Depends(require_owner)`` guard.
 router = APIRouter()
 
 _generator = PlanGenerator()
@@ -52,26 +50,6 @@ class SavePlanRequest(BaseModel):
     plan: Dict[str, Any]
 
 
-def _current_uid(authorization: Optional[str] = Header(default=None)) -> int:
-    """Authenticate a request; return the token's user id (401 if bad/missing)."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated.")
-    try:
-        return int(get_current_user(authorization).uid)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token.")
-
-
-def _require_owner(project_id: int, owner_id: int, db: Session) -> None:
-    """Raise 404 unless the caller owns the given project."""
-    row = db.execute(
-        text("SELECT id FROM projects WHERE id = :id AND owner_id = :owner"),
-        {"id": project_id, "owner": owner_id},
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Project not found.")
-
-
 @router.get("/templates", summary="List available plan templates")
 async def list_templates():
     return [
@@ -81,7 +59,7 @@ async def list_templates():
 
 
 @router.post("/questionnaire", summary="Generate a plan from a questionnaire")
-async def questionnaire(payload: QuestionnaireRequest, _: int = Depends(_current_uid)):
+async def questionnaire(payload: QuestionnaireRequest, user: TokenPayload = Depends(get_current_user)):
     try:
         plan = _generator.generate_from_questionnaire(payload.answers)
     except PlanGenerationError as exc:
@@ -90,7 +68,7 @@ async def questionnaire(payload: QuestionnaireRequest, _: int = Depends(_current
 
 
 @router.post("/template", summary="Instantiate a plan from the template library")
-async def template(payload: TemplateRequest, _: int = Depends(_current_uid)):
+async def template(payload: TemplateRequest, user: TokenPayload = Depends(get_current_user)):
     try:
         plan = _generator.generate_from_template(payload.template_id, payload.floors)
     except PlanGenerationError as exc:
@@ -99,7 +77,7 @@ async def template(payload: TemplateRequest, _: int = Depends(_current_uid)):
 
 
 @router.post("/description", summary="Generate a layout from a natural-language description")
-async def description(payload: DescriptionRequest, _: int = Depends(_current_uid)):
+async def description(payload: DescriptionRequest, user: TokenPayload = Depends(get_current_user)):
     try:
         plan = await _generator.generate_from_description(payload.text, payload.floors)
     except PlanGenerationError as exc:
@@ -114,9 +92,7 @@ async def description(payload: DescriptionRequest, _: int = Depends(_current_uid
 
 
 @router.post("/save", summary="Persist a plan for a project")
-async def save(payload: SavePlanRequest, owner_id: int = Depends(_current_uid),
-               db: Session = Depends(get_session)):
-    _require_owner(payload.project_id, owner_id, db)
+async def save(payload: SavePlanRequest, user: TokenPayload = Depends(require_owner)):
     try:
         plan = PlanData(**payload.plan)
     except Exception as exc:
@@ -126,16 +102,12 @@ async def save(payload: SavePlanRequest, owner_id: int = Depends(_current_uid),
 
 
 @router.get("/{project_id}", summary="List saved plans for a project")
-async def list_plans(project_id: int, owner_id: int = Depends(_current_uid),
-                     db: Session = Depends(get_session)):
-    _require_owner(project_id, owner_id, db)
+async def list_plans(project_id: int, user: TokenPayload = Depends(require_owner)):
     return _generator.list_plans(project_id)
 
 
 @router.get("/{project_id}/{name}", summary="Fetch a specific saved plan")
-async def get_plan(project_id: int, name: str, owner_id: int = Depends(_current_uid),
-                   db: Session = Depends(get_session)):
-    _require_owner(project_id, owner_id, db)
+async def get_plan(project_id: int, name: str, user: TokenPayload = Depends(require_owner)):
     try:
         plan = PlanGenerator.load_plan(project_id, name)
     except PlanGenerationError as exc:

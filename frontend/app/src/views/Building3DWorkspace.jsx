@@ -173,7 +173,7 @@ export default function Building3DWorkspace() {
         <div ref={mountRef} className="viewer-3d" style={{ height: 480 }}
              role="img" aria-label={`Interactive 3D building, ${stories} storeys`} />
         {mode === 'engineer' && analysisPresent && (
-          <p className="muted small">Utilisation heat-map: green -> lime -> yellow -> orange -> red.</p>
+          <p className="muted small">Utilisation heat-map: green &rarr; lime &rarr; yellow &rarr; orange &rarr; red.</p>
         )}
         {mode === 'engineer' && !analysisPresent && (
           <p className="muted small">Run analysis to see utilisation colours.</p>

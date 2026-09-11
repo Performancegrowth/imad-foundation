@@ -6,10 +6,12 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.dependencies import get_current_user
 from app.core.jobs import get_job, jobs_dir
+from app.core.security import TokenPayload
 from app.services.agents import AgentError, support_reply
 
 log = logging.getLogger("imad.api.platform")
@@ -46,7 +48,7 @@ class ChatRequest(BaseModel):
 
 
 @router.get("/jobs", summary="Queue monitor — recent background jobs")
-async def list_jobs(limit: int = 25) -> Dict[str, Any]:
+async def list_jobs(limit: int = 25, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     files = sorted(Path(jobs_dir()).glob("job*.json"),
                    key=lambda p: p.stat().st_mtime, reverse=True)[: max(1, limit)]
     jobs: List[Dict[str, Any]] = []
@@ -64,7 +66,7 @@ async def list_jobs(limit: int = 25) -> Dict[str, Any]:
 
 
 @router.get("/jobs/{job_id}", summary="Single job status")
-async def job_status(job_id: str) -> Dict[str, Any]:
+async def job_status(job_id: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown job.")
@@ -72,12 +74,13 @@ async def job_status(job_id: str) -> Dict[str, Any]:
 
 
 @router.get("/tutorials", summary="Customer-success walkthrough catalogue")
+# PUBLIC: onboarding content — no user data, useful pre-signup.
 async def tutorials() -> Dict[str, Any]:
     return {"tutorials": TUTORIALS}
 
 
 @router.post("/support/chat", summary="Live support chat (LLM with template fallback)")
-async def support_chat(payload: ChatRequest) -> Dict[str, Any]:
+async def support_chat(payload: ChatRequest, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
     try:
         return await support_reply(payload.message, payload.history)
     except AgentError as exc:

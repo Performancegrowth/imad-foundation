@@ -9,15 +9,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from app.core.dependencies import get_current_user
 from app.core.docstore import collection
 from app.services.validation_engine import ValidationError, run_suite, validation_pdf
 
 log = logging.getLogger("imad.api.validation")
-router = APIRouter()
+# AuthZ: benchmark reports back the certification posture of the deployment.
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 KNOWN_CASES = ["beam_udl", "column_gravity", "frame_elf"]
 # Accept either the canonical engine ids above or the friendly aliases below.
