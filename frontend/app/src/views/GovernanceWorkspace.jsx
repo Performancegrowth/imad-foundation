@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { downloadExport, exportSubmissionDocx, generateSBC304Package, getAuditLog, getComplianceReport, getSubmissionPackage, getSubmissionReadiness, transitionSubmission } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { useProjectPlan } from '../useProjectPlan'
 import { EmptyState, Spinner } from '../components/ui.jsx'
 import { Button, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 
 export default function GovernanceWorkspace() {
-  const projectId = useProjectId()
+    const projectId = useProjectId()
+  const { plan, loading: planLoading } = useProjectPlan()
   const [report, setReport] = useState(null)
   const [pkg, setPkg] = useState([])
   const [audit, setAudit] = useState([])
@@ -61,7 +63,10 @@ export default function GovernanceWorkspace() {
   return (
     <div className="workspace-grid">
       <Card className="span-2">
-        <CardHeader><h2>Governance &amp; Compliance</h2><Badge variant="default">Project #{projectId}</Badge></CardHeader>
+                <CardHeader><h2>Governance &amp; Compliance</h2>
+          <Badge variant="default">Project #{projectId}</Badge>
+          {plan && <Badge variant="success">{plan.label || plan.name}</Badge>}
+        </CardHeader>
         <p className="muted small">SBC 304 compliance status, municipality submission packages and the immutable audit trail.</p>
         {err && <div className="alert error" role="alert"><strong>Error:</strong> {err}</div>}
         <Button variant="primary" onClick={check} disabled={busy}>{busy ? 'Running…' : 'Run Compliance Check'}</Button>

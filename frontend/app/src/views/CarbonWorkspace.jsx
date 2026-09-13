@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { useProjectPlan } from '../useProjectPlan'
 import { Button, Select, Card, CardHeader, CardTitle } from '../components/shadcn.jsx'
 import { AreaChart, ProgressBar } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
@@ -19,12 +20,19 @@ export default function CarbonWorkspace() {
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState(null)
 
-  const projectId = useProjectId()
+    const projectId = useProjectId()
+  const { plan: currentPlan, loading: planLoading } = useProjectPlan()
 
   useEffect(() => {
     if (!projectId) return
     api.listPlans(projectId).then(setPlans).catch(() => setPlans([]))
   }, [projectId])
+
+  // Auto-select the plan resolved from the project context on first load.
+  useEffect(() => {
+    if (!currentPlan || planName) return
+    setPlanName(currentPlan.name || currentPlan.label || '')
+  }, [currentPlan, planName])
 
   const run = useCallback(async () => {
     if (!planName) return
@@ -61,7 +69,9 @@ export default function CarbonWorkspace() {
   return (
     <div className="workspace-grid">
       <Card className="span-2" aria-labelledby="carbon-title">
-        <h2 id="carbon-title">Sustainability & Embodied Carbon</h2>
+                <h2 id="carbon-title">Sustainability &amp; Embodied Carbon</h2>
+        {currentPlan && <Badge variant="default">{currentPlan.label || currentPlan.name}</Badge>
+        }
         <p className="muted">
           Cradle-to-gate LCA from the BOQ using published emission factors
           (ICE v3.0, worldsteel), with green alternatives and LEED / Mostadam / Estidama mapping.

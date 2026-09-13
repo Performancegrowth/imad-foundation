@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getAuditLog, requestSignature, runComplianceCheck } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { useProjectPlan } from '../useProjectPlan'
 import { EmptyState, ErrorState, Spinner } from '../components/ui.jsx'
 import { Button, Input, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
@@ -12,7 +13,8 @@ const STATE = {
 }
 
 export default function ReviewWorkspace() {
-  const projectId = useProjectId()
+    const projectId = useProjectId()
+  const { plan, loading: planLoading } = useProjectPlan()
   const [designId, setDesignId] = useState('res_demo')
   const [checks, setChecks] = useState(null)
   const [audit, setAudit] = useState([])
@@ -44,9 +46,10 @@ export default function ReviewWorkspace() {
   return (
     <div className="workspace-grid">
       <Card className="span-2">
-        <CardHeader>
+                <CardHeader>
           <h2>Review &amp; Compliance</h2>
           <Badge variant="success">Design reviewed</Badge>
+          {plan && <Badge variant="default">{plan.label || plan.name}</Badge>}
         </CardHeader>
         <p className="muted small">SBC 304 checklist, engineer signature and audit trail for project #{projectId}.</p>
         <div className="inline-controls">

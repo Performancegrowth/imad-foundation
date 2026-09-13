@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { getComplianceReport } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { useProjectPlan } from '../useProjectPlan'
 import StructureViewer from '../components/StructureViewer.jsx'
 import { Button } from '../components/shadcn.jsx'
 import { Select } from '../components/shadcn.jsx'
@@ -42,20 +43,27 @@ function makeDemoPlan() {
 }
 
 export default function AnalysisWorkspace() {
-  const [plan, setPlan] = useState(null)
+      const [plan, setPlan] = useState(null)
   const [result, setResult] = useState(null)
   const [compliance, setCompliance] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [savedPlans, setSavedPlans] = useState([])
-  const [selectedName, setSelectedName] = useState('')
 
   const projectId = useProjectId()
+  const { plan: defaultPlan, loading: planLoading } = useProjectPlan()
+  const [savedPlans, setSavedPlans] = useState([])
+  const [selectedName, setSelectedName] = useState('')
 
   useEffect(() => {
     if (!projectId) return
     api.listPlans(projectId).then(setSavedPlans).catch(() => setSavedPlans([]))
   }, [projectId])
+
+  // Auto-populate from the resolved project plan (default to first saved plan on first load).
+  useEffect(() => {
+    if (!defaultPlan || selectedName) return
+    setSelectedName(defaultPlan.name || defaultPlan.label || '')
+  }, [defaultPlan, selectedName])
 
   const analyze = useCallback(async (payload) => {
     setBusy(true); setError(null); setResult(null); setCompliance(null)
@@ -119,7 +127,9 @@ export default function AnalysisWorkspace() {
   return (
     <div className="workspace-grid">
       <Card className="span-2">
-        <h2>Structural Analysis</h2>
+                <h2>Structural Analysis</h2>
+        {plan && <Badge variant="default">{plan.name || plan.label}</Badge>}
+        {planLoading && <Badge variant="default">Loading plan…</Badge>}
         <p className="muted">Run a linear static + modal analysis (OpenSeesPy, analytic fallback) and a preliminary ACI 318 design + BOQ.</p>
 
         {busy && <div className="alert info" role="status">Running analysis…</div>}

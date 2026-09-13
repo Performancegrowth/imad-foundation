@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { getVisualizationData } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { useProjectPlan } from '../useProjectPlan'
 import { Button, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 
 // Real building 3D viewer (roadmap #31).
@@ -21,6 +22,7 @@ export default function Building3DWorkspace() {
   const [mode, setMode] = useState('engineer')   // engineer | customer
   const [floor, setFloor] = useState('all')
   const projectId = useProjectId()
+  const { plan, loading: planLoading } = useProjectPlan()
 
   useEffect(() => {
     if (!projectId) return
@@ -148,7 +150,10 @@ export default function Building3DWorkspace() {
       <Card className="span-2">
         <CardHeader>
           <CardTitle>3D Building View</CardTitle>
-          <Badge variant="default">{stories} storey{stories > 1 ? 'ies' : 'y'} ( {nodes.length} elements</Badge>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Badge variant="default">{stories} storey{stories > 1 ? 'ies' : 'y'} ( {nodes.length} elements</Badge>
+            {plan && <Badge variant="success">{plan.label || plan.name}</Badge>}
+          </div>
         </CardHeader>
         <p className="muted small">
           {mode === 'engineer'

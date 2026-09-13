@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { useProjectPlan } from '../useProjectPlan'
 import { Button, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 import { DonutChart, BarChart } from '../components/shadcn.jsx'
@@ -19,12 +20,19 @@ export default function BoqWorkspace() {
   const [exporting, setExporting] = useState(null)
   const [error, setError] = useState(null)
 
-  const projectId = useProjectId()
+    const projectId = useProjectId()
+    const { plan: currentPlan, loading: planLoading } = useProjectPlan()
 
   useEffect(() => {
     if (!projectId) return
     api.listPlans(projectId).then(setPlans).catch(() => setPlans([]))
   }, [projectId])
+
+  // Auto-select the plan resolved from the project context on first load.
+  useEffect(() => {
+    if (!currentPlan || planName) return
+    setPlanName(currentPlan.name || currentPlan.label || '')
+  }, [currentPlan, planName])
 
   const generate = useCallback(async () => {
     if (!planName) return
@@ -67,7 +75,8 @@ export default function BoqWorkspace() {
   return (
     <div className="workspace-grid">
       <Card className="span-2" aria-labelledby="boq-title">
-        <h2 id="boq-title">Bill of Quantities & Bar Schedule</h2>
+                <h2 id="boq-title">Bill of Quantities & Bar Schedule</h2>
+        {currentPlan && <Badge variant="default">{currentPlan.label || currentPlan.name}</Badge>}
         <p className="muted">
           Detailed take-off across concrete, rebar, formwork, earthworks and
           waterproofing — with a cutting-optimised bar bending schedule (waste target &lt; 2%).
