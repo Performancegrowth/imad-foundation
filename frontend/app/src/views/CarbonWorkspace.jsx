@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
-import { BarChart, EmptyState, StatCard } from '../components/ui.jsx'
+import { Button, Select, Card, CardHeader, CardTitle } from '../components/shadcn.jsx'
+import { AreaChart, ProgressBar } from '../components/shadcn.jsx'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
+import { EmptyState, StatCard } from '../components/ui.jsx'
 
 const fmt = (v, d = 1) => Number(v ?? 0).toLocaleString(undefined,
   { maximumFractionDigits: d })
@@ -48,14 +51,16 @@ export default function CarbonWorkspace() {
   const bandTone = { 'Best practice': 'ok', Typical: '', 'High impact': 'warn' }
   const breakdownChart = report
     ? report.carbon.breakdown.slice(0, 8)
-        .map((r) => ({ label: r.code, value: r.co2e_kg }))
+        .map((r) => ({ name: r.code, kgCO2e: Number(r.co2e_kg) || 0 }))
     : []
+  const complianceEntries = report ? Object.entries(report.compliance || {}) : []
+  const metCount = complianceEntries.filter(([, v]) => !!v).length
 
   if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2" aria-labelledby="carbon-title">
+      <Card className="span-2" aria-labelledby="carbon-title">
         <h2 id="carbon-title">Sustainability & Embodied Carbon</h2>
         <p className="muted">
           Cradle-to-gate LCA from the BOQ using published emission factors
@@ -63,17 +68,17 @@ export default function CarbonWorkspace() {
         </p>
         <div className="inline-controls wrap">
           <label htmlFor="carbon-plan" className="sr-only">Saved plan</label>
-          <select id="carbon-plan" value={planName} onChange={(e) => setPlanName(e.target.value)}>
+          <Select id="carbon-plan" value={planName} onChange={(e) => setPlanName(e.target.value)}>
             <option value="">— Select a saved plan —</option>
             {plans.map((p) => <option key={p.name} value={p.name}>{p.label}</option>)}
-          </select>
-          <button className="btn primary" onClick={run} disabled={busy || !planName}>
+          </Select>
+          <Button variant="primary" onClick={run} disabled={busy || !planName}>
             {busy ? 'Computing…' : 'Compute carbon & alternatives'}
-          </button>
+          </Button>
           {report && (
-            <button className="btn" onClick={download} disabled={downloading}>
+            <Button onClick={download} disabled={downloading}>
               {downloading ? 'Preparing…' : '⬇ LCA report (PDF)'}
-            </button>
+            </Button>
           )}
         </div>
         {!planName && plans.length === 0 && (
@@ -81,11 +86,11 @@ export default function CarbonWorkspace() {
                       hint="Generate a BOQ-able plan first — carbon is computed from its quantities." />
         )}
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
-      </section>
+      </Card>
 
       {report && (
         <>
-          <section className="card span-2" aria-label="Carbon KPIs">
+          <Card className="span-2" aria-label="Carbon KPIs">
             <div className="summary-grid four">
               <StatCard label="Embodied carbon"
                         value={fmt(report.carbon.total_co2e_tonnes)} unit="tCO₂e" />
@@ -99,61 +104,59 @@ export default function CarbonWorkspace() {
                         value={`${Math.max(0, ...report.alternatives.map((a) => a.total_cut_pct))}%`}
                         tone="ok" />
             </div>
-          </section>
+          </Card>
 
-          <section className="card span-2" aria-label="Carbon breakdown">
-            <div className="card-header"><h3>Carbon by trade (kgCO₂e)</h3></div>
-            <BarChart data={breakdownChart} unit="kgCO₂e" height={210}
-                      format={(v) => fmt(v, 0)} />
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Item</th><th className="num">Qty</th><th className="num">EF</th>
-                      <th className="num">kgCO₂e</th><th className="num">Share</th><th>Reference</th></tr>
-                </thead>
-                <tbody>
-                  {report.carbon.breakdown.map((r) => (
-                    <tr key={r.code}>
-                      <td>{r.description}</td>
-                      <td className="num">{fmt(r.quantity)}</td>
-                      <td className="num">{r.emission_factor}</td>
-                      <td className="num">{fmt(r.co2e_kg)}</td>
-                      <td className="num">{r.share_pct}%</td>
-                      <td className="muted small">{r.reference}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <Card className="span-2" aria-label="Carbon breakdown">
+            <CardHeader><CardTitle>Carbon by trade (kgCO₂e)</CardTitle></CardHeader>
+            <AreaChart data={breakdownChart} categories={['kgCO2e']} index="name"
+                       title="" subtitle="Cradle-to-gate kgCO₂e by item" />
+            <Table>
+              <TableHeader>
+                <TableRow><TableHead>Item</TableHead><TableHead className="num">Qty</TableHead><TableHead className="num">EF</TableHead>
+                    <TableHead className="num">kgCO₂e</TableHead><TableHead className="num">Share</TableHead><TableHead>Reference</TableHead></TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.carbon.breakdown.map((r) => (
+                  <TableRow key={r.code}>
+                    <TableCell>{r.description}</TableCell>
+                    <TableCell className="num">{fmt(r.quantity)}</TableCell>
+                    <TableCell className="num">{r.emission_factor}</TableCell>
+                    <TableCell className="num">{fmt(r.co2e_kg)}</TableCell>
+                    <TableCell className="num">{r.share_pct}%</TableCell>
+                    <TableCell className="muted small">{r.reference}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
 
-          <section className="card span-2" aria-label="Green alternatives">
-            <div className="card-header"><h3>Green alternatives</h3></div>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Option</th><th className="num">CO₂ cut</th>
-                      <th className="num">Cost impact</th></tr>
-                </thead>
-                <tbody>
-                  {report.alternatives.map((a) => (
-                    <tr key={a.id}>
-                      <td><strong>{a.name}</strong><br /><span className="muted small">{a.notes}</span></td>
-                      <td className="num ok-text">−{a.total_cut_pct}%</td>
-                      <td className={`num ${a.cost_delta_pct <= 0 ? 'ok-text' : 'warn-text'}`}>
-                        {a.cost_delta_pct <= 0 ? '−' : '+'}{Math.abs(a.cost_delta_pct)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <Card className="span-2" aria-label="Green alternatives">
+            <CardHeader><CardTitle>Green alternatives</CardTitle></CardHeader>
+            <Table>
+              <TableHeader>
+                <TableRow><TableHead>Option</TableHead><TableHead className="num">CO₂ cut</TableHead>
+                    <TableHead className="num">Cost impact</TableHead></TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.alternatives.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell><strong>{a.name}</strong><br /><span className="muted small">{a.notes}</span></TableCell>
+                    <TableCell className="num ok-text">−{a.total_cut_pct}%</TableCell>
+                    <TableCell className={`num ${a.cost_delta_pct <= 0 ? 'ok-text' : 'warn-text'}`}>
+                      {a.cost_delta_pct <= 0 ? '−' : '+'}{Math.abs(a.cost_delta_pct)}%
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
 
-          <section className="card span-2" aria-label="Compliance mapping">
-            <div className="card-header"><h3>Rating-system compliance snapshot</h3></div>
+          <Card className="span-2" aria-label="Compliance mapping">
+            <CardHeader><CardTitle>Rating-system compliance snapshot</CardTitle></CardHeader>
+            <ProgressBar value={metCount} max={Math.max(1, complianceEntries.length)}
+                         label="LEED / Mostadam criteria met" />
             <ul className="check-list">
-              {Object.entries(report.compliance).map(([k, v]) => (
+              {complianceEntries.map(([k, v]) => (
                 <li key={k} className={v ? 'pass' : 'fail'}>
                   <span aria-hidden="true">{v ? '✓' : '✗'}</span> {k}
                   <span className="muted small"> — {v ? 'criterion likely met; confirm with documentation'
@@ -161,7 +164,7 @@ export default function CarbonWorkspace() {
                 </li>
               ))}
             </ul>
-          </section>
+          </Card>
         </>
       )}
     </div>

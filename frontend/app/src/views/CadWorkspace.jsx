@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { api } from '../api.js'
 import PlanViewer from '../components/PlanViewer.jsx'
+import { Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 
 const STATUS_IDLE = 'idle'
 const STATUS_UPLOADING = 'uploading'
@@ -48,7 +49,7 @@ export default function CadWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
+      <Card className="span-2">
         <h2>CAD &amp; Image Import</h2>
         <p className="muted">
           Upload a structural DXF, a BIM model (IFC from Revit/ArchiCAD), or a
@@ -92,19 +93,19 @@ export default function CadWorkspace() {
             <button className="link" onClick={() => setStatus(STATUS_IDLE)}>Dismiss</button>
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <div className="card-header">
-          <h3>Extracted Structure</h3>
+      <Card className="span-2">
+        <CardHeader>
+          <CardTitle>Extracted Structure</CardTitle>
           {status === STATUS_READY && (
-            <span className="badge success">
+            <Badge variant="success">
               {plan?.walls?.length} walls · {plan?.columns?.length} columns · {plan?.beams?.length} beams
               {plan?.rooms?.length > 0 && <> · {plan.rooms.length} rooms</>}
               {plan?.source === 'ifc' && <> · IFC</>}
-            </span>
+            </Badge>
           )}
-        </div>
+        </CardHeader>
         {status === STATUS_READY ? (
           <PlanViewer plan={plan} />
         ) : (
@@ -113,7 +114,7 @@ export default function CadWorkspace() {
             <p>No structure extracted yet. Upload a file to begin.</p>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

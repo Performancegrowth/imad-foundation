@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { getVisualizationData } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { Button, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 
 // Real building 3D viewer (roadmap #31).
 // Two modes:
@@ -144,11 +145,11 @@ export default function Building3DWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
-        <div className="card-header">
-          <h2>3D Building View</h2>
-          <span className="badge">{stories} storey{stories > 1 ? 'ies' : 'y'} ( {nodes.length} elements</span>
-        </div>
+      <Card className="span-2">
+        <CardHeader>
+          <CardTitle>3D Building View</CardTitle>
+          <Badge variant="default">{stories} storey{stories > 1 ? 'ies' : 'y'} ( {nodes.length} elements</Badge>
+        </CardHeader>
         <p className="muted small">
           {mode === 'engineer'
             ? 'Real designed structure, coloured by utilisation (green = safe, red = over capacity).'
@@ -157,15 +158,15 @@ export default function Building3DWorkspace() {
         <div className="inline-controls wrap">
           <span className="muted small">Audience:</span>
           {[['engineer', 'Engineer'], ['customer', 'Customer']].map(([k, lbl]) => (
-            <button key={k} className={`btn small ${mode === k ? 'primary' : ''}`}
-                    onClick={() => setMode(k)} aria-pressed={mode === k}>{lbl}</button>
+            <Button key={k} size="sm" variant={mode === k ? 'primary' : 'outline'}
+                    onClick={() => setMode(k)} aria-pressed={mode === k}>{lbl}</Button>
           ))}
           <span className="muted small">Floor:</span>
           {floorBtns.map((f) => (
-            <button key={f} className={`btn small ${floor === f ? 'primary' : ''}`}
+            <Button key={f} size="sm" variant={floor === f ? 'primary' : 'outline'}
                     onClick={() => setFloor(f)} aria-pressed={floor === f}>
               {f === 'all' ? 'All' : `L${Number(f) + 1}`}
-            </button>
+            </Button>
           ))}
         </div>
         {loading && <p className="muted">Loading building model...</p>}
@@ -178,7 +179,7 @@ export default function Building3DWorkspace() {
         {mode === 'engineer' && !analysisPresent && (
           <p className="muted small">Run analysis to see utilisation colours.</p>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

@@ -1,5 +1,8 @@
 import { useEffect, useState, Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Button } from './components/ui/button.jsx'
+import { Badge } from './components/ui/badge.jsx'
+import { useCommandPalette, CommandPalette } from './components/CommandPalette.jsx'
 import CreatePlanWorkspace from './views/CreatePlanWorkspace.jsx'
 import SurveyWorkspace from './views/SurveyWorkspace.jsx'
 import GenerativeDesignWorkspace from './views/GenerativeDesignWorkspace.jsx'
@@ -54,22 +57,38 @@ function currentPid(pathname) {
   return stored != null ? String(stored) : null
 }
 
-function Sidebar() {
+function Sidebar({ onOpenPalette }) {
   const { pathname } = useLocation()
   const pid = currentPid(pathname)
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('imad_sidebar') === 'collapsed' } catch { return false }
+  })
+  const toggle = () => {
+    setCollapsed((c) => {
+      const next = !c
+      try { localStorage.setItem('imad_sidebar', next ? 'collapsed' : 'open') } catch {}
+      return next
+    })
+  }
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
       <div className="brand">
-        <span className="brand-mark" aria-hidden="true">ع</span>
-        <div className="brand-text"><strong>Imad</strong><span>Engineering Engine</span></div>
+        <img src="/logo.svg" alt="Imad logo" className="brand-logo" width="40" height="40" />
+        {!collapsed && (
+          <div className="brand-text"><strong>Imad</strong><span>Engineering Engine</span></div>
+        )}
       </div>
       <nav aria-label="Workspace">
-        {pid == null && (
+        {pid == null && !collapsed && (
           <div className="sidebar-hint" role="status">
             <strong>No active project</strong>
             <span>Create or select a project to unlock Survey, Analyze, BOQ & more.</span>
           </div>
         )}
+        <button type="button" className="im-cmdk-trigger" onClick={onOpenPalette} title="Command palette (Ctrl+K)">
+          <span aria-hidden="true">⌘K</span>
+          {!collapsed && <span>Search…</span>}
+        </button>
         {NAV.map((item) => {
           const scopedDisabled = item.scoped && pid == null
           const to = scopedDisabled
@@ -84,13 +103,19 @@ function Sidebar() {
               className={({ isActive }) =>
                 `nav-item ${isActive ? 'active' : ''} ${scopedDisabled ? 'locked' : ''}`}
             >
-              <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.label}
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
+              {!collapsed && item.label}
               {scopedDisabled && <span className="nav-lock" aria-hidden="true">🔒</span>}
             </NavLink>
           )
         })}
       </nav>
-      <div className="sidebar-footer"><span className="version">v0.9 · Sprints 0–14</span></div>
+      <div className="sidebar-footer">
+        {!collapsed && <span className="version">v0.9 · Sprints 0–14</span>}
+        <button type="button" className="im-collapse" onClick={toggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          {collapsed ? '»' : '«'}
+        </button>
+      </div>
     </aside>
   )
 }
@@ -117,6 +142,16 @@ function Shell() {
   const openAuth = (mode) => { setAuthMode(mode); navigate('/auth') }
   const handleAuthed = () => { setSignedIn(true); navigate('/create-plan') }
   const signOut = () => { setToken(''); setSignedIn(false); navigate('/') }
+  const { open: paletteOpen, setOpen: setPaletteOpen } = useCommandPalette()
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('imad_theme') || 'light' } catch { return 'light' }
+  })
+  useEffect(() => {
+    try {
+      document.documentElement.dataset.theme = theme
+      localStorage.setItem('imad_theme', theme)
+    } catch {}
+  }, [theme ])
   const pathFor = (id) => {
     const item = NAV.find((n) => n.id === id)
     if (!item) return '/create-plan'
@@ -126,12 +161,33 @@ function Shell() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar onOpenPalette={() => setPaletteOpen(true)} />
       <main className="content">
         <header className="topbar">
           {seo ? <p className="topbar-title">{title}</p> : <h1>{title}</h1>}
-          <AuthActions signedIn={signedIn} onOpen={openAuth} onSignOut={signOut} />
+          <div className="topbar-actions">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Open command palette"
+              title="Command palette (Ctrl+K)"
+            >
+              ⌘K
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+              aria-label="Toggle theme"
+              title="Toggle light / dark theme"
+            >
+              {theme === 'dark' ? '☀' : '◐'}
+            </Button>
+            <AuthActions signedIn={signedIn} onOpen={openAuth} onSignOut={signOut} />
+          </div>
         </header>
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
         <section className="workspace">
           <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>}>
             <Routes>

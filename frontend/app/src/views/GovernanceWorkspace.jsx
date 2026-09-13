@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { downloadExport, exportSubmissionDocx, generateSBC304Package, getAuditLog, getComplianceReport, getSubmissionPackage, getSubmissionReadiness, transitionSubmission } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
+import { Button, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 
 export default function GovernanceWorkspace() {
   const projectId = useProjectId()
@@ -58,15 +60,15 @@ export default function GovernanceWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
-        <div className="card-header"><h2>Governance &amp; Compliance</h2><span className="status-chip">Project #{projectId}</span></div>
+      <Card className="span-2">
+        <CardHeader><h2>Governance &amp; Compliance</h2><Badge variant="default">Project #{projectId}</Badge></CardHeader>
         <p className="muted small">SBC 304 compliance status, municipality submission packages and the immutable audit trail.</p>
         {err && <div className="alert error" role="alert"><strong>Error:</strong> {err}</div>}
-        <button className="btn primary" onClick={check} disabled={busy}>{busy ? 'Running…' : 'Run Compliance Check'}</button>
-      </section>
+        <Button variant="primary" onClick={check} disabled={busy}>{busy ? 'Running…' : 'Run Compliance Check'}</Button>
+      </Card>
 
-      <section className="card">
-        <h3>Compliance Status</h3>
+      <Card>
+        <CardTitle>Compliance Status</CardTitle>
         {report === null ? <EmptyState icon="🔬" title="No compliance report yet" hint="Run a check to see passed / failed / warning counts." />
           : (
             <div className="summary-grid four">
@@ -76,10 +78,10 @@ export default function GovernanceWorkspace() {
               <div className="stat"><span className="stat-label">Failed</span><strong style={{ color: 'var(--danger)' }}>{failed}</strong></div>
             </div>
           )}
-      </section>
+      </Card>
 
-      <section className="card">
-        <h3>Submission Readiness</h3>
+      <Card>
+        <CardTitle>Submission Readiness</CardTitle>
         {loading || !readiness ? <Spinner label="Checking…" />
           : (
             <>
@@ -94,19 +96,20 @@ export default function GovernanceWorkspace() {
               </ul>
             </>
           )}
-      </section>
+      </Card>
 
-      <section className="card">
-        <h3>SBC 304 Calculation Package</h3>
+      <Card>
+        <CardTitle>SBC 304 Calculation Package</CardTitle>
         <p className="muted small">Runs the analysis + compliance engines, assembles the preliminary calculation package (PDF) and records it for licensed-engineer review.</p>
-        <button className="btn primary" onClick={gen} disabled={busy}>{busy ? 'Assembling…' : 'Generate SBC 304 Package'}</button>
+        <Button variant="primary" onClick={gen} disabled={busy}>{busy ? 'Assembling…' : 'Generate SBC 304 Package'}</Button>
         {loading ? <Spinner label="Loading…" /> : pkg.length === 0
           ? <EmptyState icon="📦" title="No packages yet" hint="Generate the first calculation package." />
           : (
-            <div className="table-wrap" style={{ marginTop: 12 }}>
-              <table className="data-table">
-                <thead><tr><th>Package</th><th>Status</th><th>Last tracking event</th><th>Actions</th></tr></thead>
-                <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow><TableHead>Package</TableHead><TableHead>Status</TableHead><TableHead>Last tracking event</TableHead><TableHead>Actions</TableHead></TableRow>
+              </TableHeader>
+                <TableBody>
                   {pkg.map((p) => {
                     const file = p.file_path ?? p.file
                     const events = Array.isArray(p.tracking) ? p.tracking : []
@@ -115,22 +118,22 @@ export default function GovernanceWorkspace() {
                     const badgeClass = ['signed', 'approved'].includes(status) ? 'success'
                       : ['rejected', 'revision_required'].includes(status) ? 'warn' : ''
                     return (
-                      <tr key={p.id}>
-                        <td className="small">{file ? String(file).split(/[\\/]/).pop() : p.id}</td>
-                        <td>
-                          <span className={`badge ${badgeClass}`}>{status.replace('_', ' ')}</span>
+                      <TableRow key={p.id}>
+                        <TableCell className="small">{file ? String(file).split(/[\\/]/).pop() : p.id}</TableCell>
+                        <TableCell>
+                          <Badge variant={badgeClass}>{status.replace('_', ' ')}</Badge>
                           {p.signed_by && <div className="small muted">by {p.signed_by}</div>}
-                        </td>
-                        <td className="small">
+                        </TableCell>
+                        <TableCell className="small">
                           {last
                             ? <>{last.status}{last.reference_number ? ` · ${last.reference_number}` : ''}{last.authority ? ` · ${last.authority}` : ''}<br /><span className="muted">{String(last.at || '').replace('T', ' ').slice(0, 19)}</span></>
                             : <span className="muted">—</span>}
-                        </td>
-                        <td>
+                        </TableCell>
+                        <TableCell>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                            {file && <button className="btn" onClick={() => downloadExport(file)}>Download</button>}
+                            {file && <Button onClick={() => downloadExport(file)}>Download</Button>}
                             {file && (
-                              <button className="btn" disabled={busy}
+                              <Button disabled={busy}
                                 title="Editable Word calculation note (roadmap #17)"
                                 onClick={async () => {
                                   setBusy(true); setErr(null)
@@ -138,46 +141,42 @@ export default function GovernanceWorkspace() {
                                     const note = await exportSubmissionDocx(p.id)
                                     await downloadExport(note.file, note.filename)
                                   } catch (e) { setErr(e.message) } finally { setBusy(false) }
-                                }}>Word</button>
+                                }}>Word</Button>
                             )}
-                            <select
-                              className="btn"
+                            <Select
                               value={nextStatus[p.id] ?? 'submitted'}
                               onChange={(e) => setNextStatus({ ...nextStatus, [p.id]: e.target.value })}
                               aria-label={`Next status for ${p.id}`}
                             >
                               {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-                            </select>
-                            <button className="btn" onClick={() => applyStatus(p)} disabled={busy}>Apply</button>
+                            </Select>
+                            <Button onClick={() => applyStatus(p)} disabled={busy}>Apply</Button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+            </Table>
           )}
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <h3>Audit Log</h3>
+      <Card className="span-2">
+        <CardTitle>Audit Log</CardTitle>
         {loading ? <Spinner label="Loading audit…" /> : audit.length === 0
           ? <EmptyState icon="🧾" title="No entries" hint="Actions are recorded here, append-only." />
           : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead><tr><th>Action</th><th>User</th><th>Timestamp</th></tr></thead>
-                <tbody>{audit.slice(-30).reverse().map((a, i) => (
-                  <tr key={a.id ?? i}>
-                    <td>{a.action ?? a.event}</td><td>{a.user_id ?? a.user}</td>
-                    <td className="small">{(a.timestamp ?? a.created_at ?? '').replace('T', ' ').slice(0, 19)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
+            <Table>
+              <TableHeader><TableRow><TableHead>Action</TableHead><TableHead>User</TableHead><TableHead>Timestamp</TableHead></TableRow></TableHeader>
+              <TableBody>{audit.slice(-30).reverse().map((a, i) => (
+                <TableRow key={a.id ?? i}>
+                  <TableCell>{a.action ?? a.event}</TableCell><TableCell>{a.user_id ?? a.user}</TableCell>
+                  <TableCell className="small">{(a.timestamp ?? a.created_at ?? '').replace('T', ' ').slice(0, 19)}</TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
           )}
-      </section>
+      </Card>
     </div>
   )
 }

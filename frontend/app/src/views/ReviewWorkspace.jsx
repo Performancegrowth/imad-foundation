@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { getAuditLog, requestSignature, runComplianceCheck } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, ErrorState, Spinner } from '../components/ui.jsx'
+import { Button, Input, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 
 const STATE = {
   pass: { label: 'Pass', cls: 'pill ok' },
@@ -41,22 +43,22 @@ export default function ReviewWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
-        <div className="card-header">
+      <Card className="span-2">
+        <CardHeader>
           <h2>Review &amp; Compliance</h2>
-          <span className="badge success">Design reviewed</span>
-        </div>
+          <Badge variant="success">Design reviewed</Badge>
+        </CardHeader>
         <p className="muted small">SBC 304 checklist, engineer signature and audit trail for project #{projectId}.</p>
         <div className="inline-controls">
           <label htmlFor="rd-design" className="sr-only">Design ID</label>
-          <input id="rd-design" value={designId} onChange={(e) => setDesignId(e.target.value)} aria-label="Design ID" />
-          <button className="btn primary" onClick={run} disabled={busy}>{busy ? 'Checking…' : 'Run Compliance Checklist'}</button>
+          <Input id="rd-design" value={designId} onChange={(e) => setDesignId(e.target.value)} aria-label="Design ID" />
+          <Button variant="primary" onClick={run} disabled={busy}>{busy ? 'Checking…' : 'Run Compliance Checklist'}</Button>
         </div>
         {error && <ErrorState message={error} onRetry={run} />}
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <h3>Compliance Checklist</h3>
+      <Card className="span-2">
+        <CardTitle>Compliance Checklist</CardTitle>
         {checks === null ? <EmptyState icon="📋" title="No compliance run yet" hint="Run the checklist to evaluate reinforcement, deflection, seismic and column capacity." />
           : rows.length === 0 ? <EmptyState icon="✓" title="All clear" hint="No failing checks were reported for this design." />
           : (
@@ -73,37 +75,37 @@ export default function ReviewWorkspace() {
               })}
             </ul>
           )}
-      </section>
+      </Card>
 
-      <section className="card">
-        <h3>Signature Request</h3>
+      <Card>
+        <CardTitle>Signature Request</CardTitle>
         <p className="muted small">Only licensed engineers may approve &amp; sign. Routed to the e-seal provider (placeholder).</p>
-        <button className="btn primary" onClick={sign} disabled={busy}>{busy ? 'Requesting…' : 'Request Engineer Review &amp; Signature'}</button>
+        <Button variant="primary" onClick={sign} disabled={busy}>{busy ? 'Requesting…' : 'Request Engineer Review &amp; Signature'}</Button>
         {sig && (
           <div className={`alert ${sig.status === 'rejected' ? 'error' : 'info'}`} role="status">
             Signature <strong>{sig.status ?? sig.request?.status ?? 'pending'}</strong>{sig.request_id ? ` · ref ${sig.request_id}` : ''}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="card">
-        <h3>Audit Log</h3>
+      <Card>
+        <CardTitle>Audit Log</CardTitle>
         {loading ? <Spinner label="Loading…" /> : audit.length === 0
           ? <EmptyState icon="🧾" title="No entries" hint="Design and signing actions are recorded here." />
           : (
             <div className="table-wrap">
-              <table className="data-table">
-                <thead><tr><th>Action</th><th>User</th><th>When</th></tr></thead>
-                <tbody>{audit.slice(-25).reverse().map((a, i) => (
-                  <tr key={a.id ?? i}>
-                    <td>{a.action ?? a.event ?? '—'}</td><td>{a.user_id ?? a.user ?? '—'}</td>
-                    <td className="small">{(a.timestamp ?? a.created_at ?? '').replace('T', ' ').slice(0, 19)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
+              <Table>
+                <TableHeader><TableRow><TableHead>Action</TableHead><TableHead>User</TableHead><TableHead>When</TableHead></TableRow></TableHeader>
+                <TableBody>{audit.slice(-25).reverse().map((a, i) => (
+                  <TableRow key={a.id ?? i}>
+                    <TableCell>{a.action ?? a.event ?? '—'}</TableCell><TableCell>{a.user_id ?? a.user ?? '—'}</TableCell>
+                    <TableCell className="small">{(a.timestamp ?? a.created_at ?? '').replace('T', ' ').slice(0, 19)}</TableCell>
+                  </TableRow>
+                ))}</TableBody>
+              </Table>
             </div>
           )}
-      </section>
+      </Card>
     </div>
   )
 }

@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { api, setActiveProject } from '../api.js'
 import { readStoredProject } from '../useProjectId.jsx'
 import PlanViewer from '../components/PlanViewer.jsx'
+import { Button, Input, Textarea, Label, Select } from '../components/shadcn.jsx'
+import { Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/shadcn.jsx'
 
 const TABS = ['questionnaire', 'templates', 'description']
 
@@ -110,25 +113,26 @@ export default function CreatePlanWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
+      <Card className="span-2">
         <h2>Create a Structural Plan</h2>
         <p className="muted">No CAD file? Build a plan from a questionnaire, a ready template, or a plain-language description.</p>
         {resolvingProject && <div className="alert info" role="status">Checking your projects…</div>}
         {!resolvingProject && projectId && <p className="muted small">Saving to <strong>project #{projectId}</strong> — saved plans feed Survey, Analysis &amp; BOQ.</p>}
 
-        <div className="tabs" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              className={`tab ${tab === t ? 'active' : ''}`}
-              onClick={() => setTab(t)}
-            >
-              {t === 'questionnaire' ? 'Questionnaire' : t === 'templates' ? 'Templates' : 'AI Description'}
-            </button>
-          ))}
-        </div>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            {TABS.map((t) => (
+              <TabsTrigger
+                key={t}
+                value={t}
+                active={tab === t}
+                onClick={() => setTab(t)}
+              >
+                {t === 'questionnaire' ? 'Questionnaire' : t === 'templates' ? 'Templates' : 'AI Description'}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         {busy && <div className="alert info" role="status">Generating layout…</div>}
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
@@ -139,43 +143,43 @@ export default function CreatePlanWorkspace() {
             className="form-grid"
             onSubmit={(e) => { e.preventDefault(); generateQuestionnaire() }}
           >
-            <label>
+            <Label>
               Building use
-              <select value={answers.use} onChange={(e) => setAnswers({ ...answers, use: e.target.value })}>
+              <Select value={answers.use} onChange={(e) => setAnswers({ ...answers, use: e.target.value })}>
                 <option value="office">Office</option>
                 <option value="residential">Residential</option>
                 <option value="warehouse">Warehouse</option>
                 <option value="institutional">Institutional</option>
-              </select>
-            </label>
-            <label>
+              </Select>
+            </Label>
+            <Label>
               Length (m)
-              <input type="number" min="1" max="300" value={answers.length_m}
+              <Input type="number" min="1" max="300" value={answers.length_m}
                 onChange={(e) => setAnswers({ ...answers, length_m: e.target.value })} />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Width (m)
-              <input type="number" min="1" max="300" value={answers.width_m}
+              <Input type="number" min="1" max="300" value={answers.width_m}
                 onChange={(e) => setAnswers({ ...answers, width_m: e.target.value })} />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Floors
-              <input type="number" min="1" max="30" value={answers.floors}
+              <Input type="number" min="1" max="30" value={answers.floors}
                 onChange={(e) => setAnswers({ ...answers, floors: e.target.value })} />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Bays (length)
-              <input type="number" min="1" max="20" value={answers.bays_x}
+              <Input type="number" min="1" max="20" value={answers.bays_x}
                 onChange={(e) => setAnswers({ ...answers, bays_x: e.target.value })} />
-            </label>
-            <label>
+            </Label>
+            <Label>
               Bays (width)
-              <input type="number" min="1" max="20" value={answers.bays_y}
+              <Input type="number" min="1" max="20" value={answers.bays_y}
                 onChange={(e) => setAnswers({ ...answers, bays_y: e.target.value })} />
-            </label>
-            <button type="submit" className="btn primary" disabled={busy}>
+            </Label>
+            <Button type="submit" variant="primary" disabled={busy}>
               {busy ? 'Generating…' : 'Generate Layout'}
-            </button>
+            </Button>
           </form>
         )}
 
@@ -205,53 +209,53 @@ export default function CreatePlanWorkspace() {
               ))}
             </div>
             <div className="inline-controls">
-              <label>
+              <Label>
                 Floors
-                <input type="number" min="1" max="10" value={floors}
+                <Input type="number" min="1" max="10" value={floors}
                   onChange={(e) => setFloors(Number(e.target.value) || 1)} />
-              </label>
-              <button className="btn primary" onClick={generateTemplate} disabled={busy}>
+              </Label>
+              <Button variant="primary" onClick={generateTemplate} disabled={busy}>
                 {busy ? 'Generating…' : 'Use Template'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
         {tab === 'description' && (
           <div>
-            <label className="full">
+            <Label className="full">
               Describe the building
-              <textarea
+              <Textarea
                 rows="4"
                 value={description}
                 placeholder="e.g. A three-storey office tower, 24 by 15 metres, with a concrete frame on a 7.5 m grid…"
                 onChange={(e) => setDescription(e.target.value)}
               />
-            </label>
+            </Label>
             <div className="inline-controls">
-              <label>
+              <Label>
                 Floors
-                <input type="number" min="1" max="30" value={floors}
+                <Input type="number" min="1" max="30" value={floors}
                   onChange={(e) => setFloors(Number(e.target.value) || 1)} />
-              </label>
-              <button className="btn primary" onClick={generateDescription} disabled={busy}>
+              </Label>
+              <Button variant="primary" onClick={generateDescription} disabled={busy}>
                 {busy ? 'Generating…' : 'Generate Layout'}
-              </button>
+              </Button>
             </div>
             <p className="muted small">Uses the local Ollama model if running (localhost:11434).</p>
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <div className="card-header">
-          <h3>Preview</h3>
+      <Card className="span-2">
+        <CardHeader>
+          <CardTitle>Preview</CardTitle>
           {plan && (
-            <span className="badge success">
+            <Badge variant="success">
               {plan.walls?.length}w · {plan.columns?.length}c · {plan.beams?.length}b
-            </span>
+            </Badge>
           )}
-        </div>
+        </CardHeader>
         {plan ? <PlanViewer plan={plan} /> : (
           <div className="empty">
             <span className="empty-icon" aria-hidden="true">⌗</span>
@@ -261,14 +265,14 @@ export default function CreatePlanWorkspace() {
 
         {plan && (
           <div className="save-row">
-            <input
+            <Input
               type="text"
               placeholder="Plan name (e.g. Ground Floor)"
               value={planName}
               onChange={(e) => setPlanName(e.target.value)}
               aria-label="Plan name"
             />
-            <button className="btn" onClick={savePlan} disabled={busy || !projectId}>Save Plan</button>
+            <Button onClick={savePlan} disabled={busy || !projectId}>Save Plan</Button>
           </div>
         )}
 
@@ -285,7 +289,7 @@ export default function CreatePlanWorkspace() {
             </ul>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

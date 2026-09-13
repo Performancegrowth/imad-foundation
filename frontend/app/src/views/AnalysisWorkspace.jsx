@@ -3,6 +3,12 @@ import { api } from '../api.js'
 import { getComplianceReport } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import StructureViewer from '../components/StructureViewer.jsx'
+import { Button } from '../components/shadcn.jsx'
+import { Select } from '../components/shadcn.jsx'
+import { Card, CardHeader, CardTitle } from '../components/shadcn.jsx'
+import { Badge } from '../components/shadcn.jsx'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
+import { BarChart, LineChart } from '../components/shadcn.jsx'
 
 // Deterministic demo frame used when no plan has been saved yet, so the
 // analysis workspace can be exercised immediately.
@@ -97,11 +103,22 @@ export default function AnalysisWorkspace() {
     String(c.check_name || '').toLowerCase().includes('cross-check'))
   const crossSections = crossCheck?.details?.sections || []
 
+  const memberChart = (result.member_forces || []).slice(0, 20).map((f) => ({
+    name: f.element_id,
+    Moment: Math.abs(Number(f.moment_kNm) || 0),
+    Shear: Math.abs(Number(f.shear_kN) || 0),
+    Axial: Math.abs(Number(f.axial_kN) || 0),
+  }))
+  const deflectionChart = (result.member_forces || []).slice(0, 20).map((f, i) => ({
+    name: f.element_id ?? `M${i + 1}`,
+    Deflection: Math.abs(Number(f.deflection_mm ?? result.summary?.max_deflection_mm ?? 0) || 0),
+  }))
+
   if (!projectId) return <NoProject />
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
+      <Card className="span-2">
         <h2>Structural Analysis</h2>
         <p className="muted">Run a linear static + modal analysis (OpenSeesPy, analytic fallback) and a preliminary ACI 318 design + BOQ.</p>
 
@@ -109,42 +126,41 @@ export default function AnalysisWorkspace() {
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
 
         <div className="inline-controls wrap">
-          <button className="btn primary" onClick={analyzeDemo} disabled={busy}>
+          <Button variant="primary" onClick={analyzeDemo} disabled={busy}>
             {busy ? 'Analyzing…' : 'Analyze Demo Frame'}
-          </button>
+          </Button>
           {savedPlans.length > 0 && (
             <>
-              <select value={selectedName} onChange={(e) => setSelectedName(e.target.value)} aria-label="Saved plan">
+              <Select value={selectedName} onChange={(e) => setSelectedName(e.target.value)} aria-label="Saved plan">
                 <option value="">— Select saved plan —</option>
                 {savedPlans.map((s) => <option key={s.name} value={s.name}>{s.label}</option>)}
-              </select>
-              <button className="btn" onClick={analyzeSaved} disabled={busy || !selectedName}>
+              </Select>
+              <Button onClick={analyzeSaved} disabled={busy || !selectedName}>
                 Analyze Saved
-              </button>
+              </Button>
             </>
           )}
         </div>
-      </section>
+      </Card>
 
       {result && (
         <>
-          <section className="card span-2">
-            <div className="card-header">
-              <h3>3D Model</h3>
-              <span className="badge">{result.solver === 'opensees' ? 'OpenSeesPy' : 'Analytic solver'}</span>
-            </div>
+          <Card className="span-2">
+            <CardHeader><CardTitle>3D Model</CardTitle>
+              <Badge variant={result.solver === 'opensees' ? 'success' : 'default'}>{result.solver === 'opensees' ? 'OpenSeesPy' : 'Analytic solver'}</Badge>
+            </CardHeader>
             <StructureViewer plan={plan || result.plan} forces={result.member_forces} />
             <p className="muted small">Drag to orbit · scroll to zoom · green = light load, gold = moderate, red = near/over capacity.</p>
-          </section>
+          </Card>
 
           {compliance && (
-            <section className="card span-2">
-              <div className="card-header">
-                <h3>Code Compliance (SBC 304)</h3>
-                <span className={`badge ${compliance.overall_status === 'pass' ? 'ok' : compliance.overall_status === 'warn' ? 'warn' : 'fail'}`}>
+            <Card className="span-2">
+              <CardHeader>
+                <CardTitle>Code Compliance (SBC 304)</CardTitle>
+                <Badge variant={compliance.overall_status === 'pass' ? 'success' : compliance.overall_status === 'warn' ? 'warn' : 'fail'}>
                   {compliance.overall_status.toUpperCase()}
-                </span>
-              </div>
+                </Badge>
+              </CardHeader>
               <div className="summary-grid four">
                 <div className="stat"><span className="stat-label">Checks</span><strong>{compliance.checks?.length ?? 0}</strong></div>
                 <div className="stat"><span className="stat-label">Passed</span><strong>{compliance.summary?.passed ?? 0}</strong></div>
@@ -152,76 +168,92 @@ export default function AnalysisWorkspace() {
                 <div className="stat"><span className="stat-label">Failed</span><strong>{compliance.summary?.failed ?? 0}</strong></div>
               </div>
               <p className="muted small">Detailed per-clause results (punching, shear, development length, cross-check, …) are in the <strong>Governance</strong> tab.</p>
-            </section>
+            </Card>
           )}
 
-          <section className="card span-2">
-            <div className="card-header"><h3>Summary of Forces</h3></div>
+          <Card className="span-2">
+            <CardHeader><CardTitle>Summary of Forces</CardTitle></CardHeader>
             <div className="summary-grid four">
               <div className="stat"><span className="stat-label">Max moment</span><strong>{fmt(result.summary?.max_moment_kNm, 'kN·m')}</strong></div>
               <div className="stat"><span className="stat-label">Max shear</span><strong>{fmt(result.summary?.max_shear_kN, 'kN')}</strong></div>
               <div className="stat"><span className="stat-label">Max axial</span><strong>{fmt(result.summary?.max_axial_kN, 'kN')}</strong></div>
               <div className="stat"><span className="stat-label">Max deflection</span><strong>{fmt(result.summary?.max_deflection_mm, 'mm')}</strong></div>
             </div>
-            <table className="data-table">
-              <thead>
-                <tr><th>Element</th><th>Type</th><th>Moment (kN·m)</th><th>Shear (kN)</th><th>Axial (kN)</th></tr>
-              </thead>
-              <tbody>
+            <div className="im-chart-grid">
+              <BarChart
+                data={memberChart}
+                categories={['Moment', 'Shear', 'Axial']}
+                index="name"
+                title="Member forces"
+                subtitle="Absolute values per element"
+              />
+              <LineChart
+                data={deflectionChart}
+                categories={['Deflection']}
+                index="name"
+                title="Deflection profile"
+                subtitle="Per element (mm)"
+              />
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow><TableHead>Element</TableHead><TableHead>Type</TableHead><TableHead>Moment (kN·m)</TableHead><TableHead>Shear (kN)</TableHead><TableHead>Axial (kN)</TableHead></TableRow>
+              </TableHeader>
+              <TableBody>
                 {(result.member_forces || []).map((f, idx) => (
-                  <tr key={`${f.element_id}-${idx}`}>
-                    <td>{f.element_id}</td>
-                    <td>{f.kind}</td>
-                    <td>{fmt(f.moment_kNm, '')}</td>
-                    <td>{fmt(f.shear_kN, '')}</td>
-                    <td>{fmt(f.axial_kN, '')}</td>
-                  </tr>
+                  <TableRow key={`${f.element_id}-${idx}`}>
+                    <TableCell>{f.element_id}</TableCell>
+                    <TableCell>{f.kind}</TableCell>
+                    <TableCell>{fmt(f.moment_kNm, '')}</TableCell>
+                    <TableCell>{fmt(f.shear_kN, '')}</TableCell>
+                    <TableCell>{fmt(f.axial_kN, '')}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </section>
+              </TableBody>
+            </Table>
+          </Card>
 
-          <section className="card">
-            <div className="card-header"><h3>Concrete Design (ACI 318)</h3></div>
+          <Card>
+            <CardHeader><CardTitle>Concrete Design (ACI 318)</CardTitle></CardHeader>
             <p className="muted small">
               C{result.design?.concrete_strength_mpa || 30} · fy {result.design?.steel_yield_mpa || 460} MPa ·
               utilization <strong>{result.design?.max_utilization ?? '—'}</strong>
             </p>
-            <p className={`pill ${result.design?.status === 'acceptable' ? 'ok' : 'warn'}`}>
+            <Badge variant={result.design?.status === 'acceptable' ? 'success' : 'warn'}>
               {result.design?.status || '—'}
-            </p>
+            </Badge>
             {crossCheck && (
               <div style={{ marginTop: 12 }}>
                 <p className="muted small">
                   Cross-checked vs <strong>EC2-2004</strong> (structuralcodes, {crossCheck.details?.library || 'structuralcodes'}):
                 </p>
-                <p className={`pill ${crossCheck.status === 'pass' ? 'ok' : crossCheck.status === 'warn' ? 'warn' : 'fail'}`}>
+                <Badge variant={crossCheck.status === 'pass' ? 'success' : crossCheck.status === 'warn' ? 'warn' : 'fail'}>
                   {crossSections.length} section{crossSections.length !== 1 ? 's' : ''} ·
                   ratio {crossSections.length ? `${Math.min(...crossSections.map((s) => s.ratio)).toFixed(2)}–${Math.max(...crossSections.map((s) => s.ratio)).toFixed(2)}` : '—'}
                   {crossCheck.status === 'pass' ? ' (within band)' : ''}
-                </p>
+                </Badge>
               </div>
             )}
-          </section>
+          </Card>
 
-          <section className="card">
-            <div className="card-header"><h3>Preliminary BOQ</h3></div>
+          <Card>
+            <CardHeader><CardTitle>Preliminary BOQ</CardTitle></CardHeader>
             <div className="summary-grid">
               <div className="stat"><span className="stat-label">Concrete</span><strong>{fmt(result.boq?.concrete_m3, 'm³')}</strong></div>
               <div className="stat"><span className="stat-label">Rebar</span><strong>{fmt(result.boq?.rebar_tonnes, 't')}</strong></div>
               <div className="stat"><span className="stat-label">Footprint</span><strong>{fmt(result.boq?.footprint_m2, 'm²')}</strong></div>
             </div>
-          </section>
+          </Card>
         </>
       )}
 
       {!result && !busy && (
-        <section className="card span-2">
+        <Card className="span-2">
           <div className="empty">
             <span className="empty-icon" aria-hidden="true">≣</span>
             <p>Run an analysis to view the 3D model, forces, design checks and BOQ.</p>
           </div>
-        </section>
+        </Card>
       )}
     </div>
   )

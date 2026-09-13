@@ -7,6 +7,7 @@ import {
   faqPageSchema,
   organizationSchema,
 } from '../seoData.js'
+import { Button, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 
 const FEATURES = [
   'Generative AI structural design',
@@ -29,8 +30,8 @@ export default function LandingWorkspace({ onNav, onAuth }) {
         schema={[softwareAppSchema(), faqPageSchema(), organizationSchema()]}
       />
 
-      <section className="card span-2 hero-card" aria-label="Imad overview">
-        <span className="badge success">The Autonomous Engineering Engine</span>
+      <Card className="span-2 hero-card" aria-label="Imad overview">
+        <Badge variant="success">The Autonomous Engineering Engine</Badge>
         <h1 className="hero-title">Imad (عِماد) – AI Structural Engineering Platform</h1>
         <p>
           Generate structural designs, Bills of Quantities, and sustainability
@@ -39,40 +40,40 @@ export default function LandingWorkspace({ onNav, onAuth }) {
           <strong>Eurocode 2</strong> and <strong>SBC 304</strong>.
         </p>
         <div className="inline-controls">
-          <button className="btn primary" onClick={() => onAuth?.('register')} aria-label="Create your free Imad account">
+          <Button variant="primary" onClick={() => onAuth?.('register')} aria-label="Create your free Imad account">
             Start Free — Sign Up
-          </button>
-          <button className="btn" onClick={() => onAuth?.('login')} aria-label="Log in to your Imad account">
+          </Button>
+          <Button onClick={() => onAuth?.('login')} aria-label="Log in to your Imad account">
             Login
-          </button>
-          <button className="btn" onClick={() => onNav?.('pricing')}>View Pricing</button>
+          </Button>
+          <Button onClick={() => onNav?.('pricing')}>View Pricing</Button>
         </div>
-      </section>
+      </Card>
 
-      <section className="card span-2" aria-labelledby="landing-features">
-        <div className="card-header">
+      <Card className="span-2" aria-labelledby="landing-features">
+        <CardHeader>
           <h2 id="landing-features">What Imad does</h2>
-          <span className="badge success">Generative design</span>
-        </div>
+          <Badge variant="success">Generative design</Badge>
+        </CardHeader>
         <ul className="feature-list">
           {FEATURES.map((f) => (
             <li key={f}>✓ {f}</li>
           ))}
         </ul>
-      </section>
+      </Card>
 
-      <section className="card span-2" aria-labelledby="landing-pricing">
+      <Card className="span-2" aria-labelledby="landing-pricing">
         <h2 id="landing-pricing">Simple, value-based pricing</h2>
         <p className="muted">
           Free to evaluate. Pay-Per-Project $99, Office $299/mo, Enterprise $999/mo.
         </p>
-      </section>
+      </Card>
 
-      <section className="card span-2" aria-labelledby="landing-faq">
-        <div className="card-header">
+      <Card className="span-2" aria-labelledby="landing-faq">
+        <CardHeader>
           <h2 id="landing-faq">Frequently asked questions</h2>
-          <button className="btn small" onClick={() => onNav?.('faq')}>View all FAQs</button>
-        </div>
+          <Button size="sm" onClick={() => onNav?.('faq')}>View all FAQs</Button>
+        </CardHeader>
         <div className="faq-preview">
           {FAQS.slice(0, 5).map((f) => (
             <details className="faq-item" key={f.q}>
@@ -81,7 +82,7 @@ export default function LandingWorkspace({ onNav, onAuth }) {
             </details>
           ))}
         </div>
-      </section>
+      </Card>
     </div>
   )
 }

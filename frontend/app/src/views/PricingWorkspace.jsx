@@ -4,6 +4,7 @@ import { pApi } from '../platformApi.js'
 import Seo from '../components/Seo.jsx'
 import PlanCard, { PLANS, StatLike } from '../components/PricingCard.jsx'
 import { SITE_URL } from '../seoData.js'
+import { Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 
 export default function PricingWorkspace() {
   const [annual, setAnnual] = useState(false)
@@ -38,31 +39,31 @@ export default function PricingWorkspace() {
         description="Simple pricing for AI structural design, BOQ generation, and sustainability reporting. Free tier available."
         canonical={`${SITE_URL}/pricing`}
       />
-      <section className="card span-2" aria-labelledby="pricing-title">
-        <div className="card-header">
+      <Card className="span-2" aria-labelledby="pricing-title">
+        <CardHeader>
           <h1 id="pricing-title">Plans &amp; Pricing</h1>
           <label className="inline-controls" htmlFor="cycle-toggle">
             <span className={annual ? 'muted' : 'strong'}>Monthly</span>
             <input id="cycle-toggle" type="checkbox" checked={annual}
                    onChange={(e) => setAnnual(e.target.checked)} />
-            <span className={annual ? 'strong' : 'muted'}>Annual <span className="badge ok">−15%</span></span>
+            <span className={annual ? 'strong' : 'muted'}>Annual <Badge variant="success">−15%</Badge></span>
           </label>
-        </div>
+        </CardHeader>
         <p className="muted">Value-based pricing: unlock the full engineering pipeline — analysis,
           generative design, BOQ, LCA and municipality-ready submissions.</p>
         {notice && <div className="alert ok" role="status">{notice}</div>}
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
-      </section>
+      </Card>
 
       {current && (
-        <section className="card span-2" aria-label="Current subscription">
-          <h3>Current subscription</h3>
+        <Card className="span-2" aria-label="Current subscription">
+          <CardTitle>Current subscription</CardTitle>
           <div className="summary-grid">
             <StatLike label="Plan" value={String(current.plan ?? 'free').toUpperCase()} />
             <StatLike label="Status" value={String(current.status ?? 'active')} />
             <StatLike label="Renews" value={String(current.renews_at ?? '—')} />
           </div>
-        </section>
+        </Card>
       )}
 
       <div className="pricing-grid span-2">
@@ -71,13 +72,13 @@ export default function PricingWorkspace() {
         ))}
       </div>
 
-      <section className="card span-2" aria-label="Payment note">
+      <Card className="span-2" aria-label="Payment note">
         <p className="muted small">
           Payments run through a <strong>Stripe sandbox placeholder</strong> — upgrades are
           recorded instantly for evaluation and no card is charged. Production keys drop in
           via <code>STRIPE_SECRET_KEY</code> (see docs/monetization.md).
         </p>
-      </section>
+      </Card>
     </div>
   )
 }

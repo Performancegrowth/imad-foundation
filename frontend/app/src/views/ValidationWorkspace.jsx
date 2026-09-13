@@ -5,6 +5,7 @@
 import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { readStoredProject } from '../useProjectId.jsx'
+import { Card } from '../components/shadcn.jsx'
 
 export default function ValidationWorkspace() {
   const navigate = useNavigate()
@@ -19,7 +20,7 @@ export default function ValidationWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
+      <Card className="span-2">
         <h2>Validation moved</h2>
         <p className="muted">
           Code-compliance checking now runs from the <strong>Governance</strong> tab,
@@ -27,7 +28,7 @@ export default function ValidationWorkspace() {
           punching shear, beam shear, development length, the structuralcodes cross-check, …).
         </p>
         <p className="muted small">Redirecting…</p>
-      </section>
+      </Card>
     </div>
   )
 }

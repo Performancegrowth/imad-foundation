@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
+import { Button, Input, Label, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 
 const EMPTY = {
   soil_bearing_capacity_kpa: '',
@@ -72,7 +73,7 @@ export default function SurveyWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
+      <Card className="span-2">
         <h2>Site Survey &amp; Geotechnics</h2>
         <p className="muted">Record site constraints that drive foundation selection and earthwork design.</p>
 
@@ -81,101 +82,101 @@ export default function SurveyWorkspace() {
         {notice && <div className="alert success" role="status">{notice}</div>}
 
         <form className="form-grid" onSubmit={submitManual}>
-          <label>
+          <Label>
             Soil bearing capacity (kPa)
-            <input type="number" min="1" max="5000" value={form.soil_bearing_capacity_kpa} onChange={set('soil_bearing_capacity_kpa')} />
-          </label>
-          <label>
+            <Input type="number" min="1" max="5000" value={form.soil_bearing_capacity_kpa} onChange={set('soil_bearing_capacity_kpa')} />
+          </Label>
+          <Label>
             Groundwater depth (m)
-            <input type="number" min="0" step="0.1" value={form.groundwater_depth_m} onChange={set('groundwater_depth_m')} />
-          </label>
-          <label>
+            <Input type="number" min="0" step="0.1" value={form.groundwater_depth_m} onChange={set('groundwater_depth_m')} />
+          </Label>
+          <Label>
             Terrain slope (°)
-            <input type="number" min="0" max="90" value={form.terrain_slope_deg} onChange={set('terrain_slope_deg')} />
-          </label>
-          <label>
+            <Input type="number" min="0" max="90" value={form.terrain_slope_deg} onChange={set('terrain_slope_deg')} />
+          </Label>
+          <Label>
             Latitude
-            <input type="number" min="-90" max="90" step="0.0001" value={form.latitude} onChange={set('latitude')} />
-          </label>
-          <label>
+            <Input type="number" min="-90" max="90" step="0.0001" value={form.latitude} onChange={set('latitude')} />
+          </Label>
+          <Label>
             Longitude
-            <input type="number" min="-180" max="180" step="0.0001" value={form.longitude} onChange={set('longitude')} />
-          </label>
-          <label>
+            <Input type="number" min="-180" max="180" step="0.0001" value={form.longitude} onChange={set('longitude')} />
+          </Label>
+          <Label>
             Soil type
-            <select value={form.soil_type} onChange={set('soil_type')}>
+            <Select value={form.soil_type} onChange={set('soil_type')}>
               <option value="clay">Clay</option>
               <option value="sand">Sand</option>
               <option value="silt">Silt</option>
               <option value="gravel">Gravel</option>
               <option value="rock">Rock</option>
-            </select>
-          </label>
-          <button type="submit" className="btn primary" disabled={busy}>Record Reading</button>
+            </Select>
+          </Label>
+          <Button type="submit" variant="primary" disabled={busy}>Record Reading</Button>
         </form>
 
         <hr className="divider" />
         <h3>Seismic &amp; Wind (SBC 301)</h3>
         <p className="muted small">Lateral-load parameters. Defaults apply for Saudi Arabia when blank.</p>
         <form className="form-grid" onSubmit={submitManual}>
-          <label>
+          <Label>
             Ss (short-period, g)
-            <input type="number" min="0" max="3" step="0.01" value={form.ss_mps2} onChange={set('ss_mps2')} placeholder="0.35" />
-          </label>
-          <label>
+            <Input type="number" min="0" max="3" step="0.01" value={form.ss_mps2} onChange={set('ss_mps2')} placeholder="0.35" />
+          </Label>
+          <Label>
             S1 (1-sec, g)
-            <input type="number" min="0" max="2" step="0.01" value={form.s1_mps2} onChange={set('s1_mps2')} placeholder="0.12" />
-          </label>
-          <label>
+            <Input type="number" min="0" max="2" step="0.01" value={form.s1_mps2} onChange={set('s1_mps2')} placeholder="0.12" />
+          </Label>
+          <Label>
             Site class
-            <select value={form.site_class} onChange={set('site_class')}>
+            <Select value={form.site_class} onChange={set('site_class')}>
               <option value="A">A — Hard rock</option>
               <option value="B">B — Rock</option>
               <option value="C">C — Very dense soil</option>
               <option value="D">D — Stiff soil (default)</option>
               <option value="E">E — Soft soil</option>
               <option value="F">F — Requires site study</option>
-            </select>
-          </label>
-          <label>
+            </Select>
+          </Label>
+          <Label>
             R factor (response mod.)
-            <input type="number" min="1" max="8" step="0.5" value={form.r_factor} onChange={set('r_factor')} placeholder="5.0" />
-          </label>
-          <label>
+            <Input type="number" min="1" max="8" step="0.5" value={form.r_factor} onChange={set('r_factor')} placeholder="5.0" />
+          </Label>
+          <Label>
             Basic wind speed (m/s)
-            <input type="number" min="0" max="100" step="1" value={form.basic_wind_speed_mps} onChange={set('basic_wind_speed_mps')} placeholder="32" />
-          </label>
-          <label>
+            <Input type="number" min="0" max="100" step="1" value={form.basic_wind_speed_mps} onChange={set('basic_wind_speed_mps')} placeholder="32" />
+          </Label>
+          <Label>
             Wind exposure
-            <select value={form.wind_exposure} onChange={set('wind_exposure')}>
+            <Select value={form.wind_exposure} onChange={set('wind_exposure')}>
               <option value="B">B — Suburban/urban</option>
               <option value="C">C — Open terrain</option>
               <option value="D">D — Flat, unobstructed</option>
-            </select>
-          </label>
+            </Select>
+          </Label>
         </form>
 
         <hr className="divider" />
         <h3>Import geotechnical report</h3>
         <p className="muted small">PDF report, topographic CSV, contour DXF, or LAS point cloud.</p>
         <div className="inline-controls">
-          <input
+          <Input
             type="file"
             accept=".pdf,.csv,.dxf,.las,.laz"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
             aria-label="Choose geotechnical file"
           />
-          <button className="btn primary" onClick={submitFile} disabled={busy || !file}>
+          <Button variant="primary" onClick={submitFile} disabled={busy || !file}>
             Upload &amp; Import
-          </button>
+          </Button>
         </div>
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <div className="card-header">
-          <h3>Survey Summary</h3>
-          {summary?.entries ? <span className="badge">{summary.entries} readout(s)</span> : null}
-        </div>
+      <Card className="span-2">
+        <CardHeader>
+          <CardTitle>Survey Summary</CardTitle>
+          {summary?.entries ? <Badge variant="default">{summary.entries} readout(s)</Badge> : null}
+        </CardHeader>
         <div className="summary-grid">
           <div className="stat">
             <span className="stat-label">Soil bearing</span>
@@ -215,7 +216,7 @@ export default function SurveyWorkspace() {
         <p className="muted small" style={{ marginTop: 12 }}>
           {summary?.message || 'No survey data yet — record site inputs on the left.'}
         </p>
-      </section>
+      </Card>
     </div>
   )
 }

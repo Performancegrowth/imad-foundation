@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import Seo from '../components/Seo.jsx'
 import { SITE_URL } from '../seoData.js'
+import { Button, Card, CardHeader, Badge } from '../components/shadcn.jsx'
 
 const POSTS = [
   {
@@ -63,23 +64,23 @@ export default function BlogWorkspace() {
         ogDescription="AI structural engineering guides: codes, generative design, BOQ and sustainability."
       />
 
-      <section className="card span-2" aria-labelledby="blog-title">
+      <Card className="span-2" aria-labelledby="blog-title">
         <h1 id="blog-title">Engineering Blog</h1>
         <p className="muted">
           Insights on AI structural engineering, building codes, BOQ optimization
           and sustainability.
         </p>
-      </section>
+      </Card>
 
       <div className="card-grid span-2">
         {POSTS.map((p, i) => {
           const open = openIdx === i
           return (
             <article className={`card ${open ? 'span-2' : ''}`} key={p.title}>
-              <div className="card-header">
-                <span className="badge success">{p.tag}</span>
+              <CardHeader>
+                <Badge variant="success">{p.tag}</Badge>
                 <span className="muted small">{p.minutes} min read</span>
-              </div>
+              </CardHeader>
               <h2>{p.title}</h2>
               <p className="muted small">{p.excerpt}</p>
               {open && (
@@ -87,13 +88,13 @@ export default function BlogWorkspace() {
                   {p.body.map((para) => <p key={para.slice(0, 24)}>{para}</p>)}
                 </div>
               )}
-              <button
-                className="btn small"
+              <Button
+                size="sm"
                 onClick={() => setOpenIdx(open ? null : i)}
                 aria-expanded={open}
               >
                 {open ? 'Close article' : 'Read post'}
-              </button>
+              </Button>
             </article>
           )
         })}

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { getConsultants, getCostData, getSuppliers, requestConsultantReview } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
+import { Button, Input, Card, CardHeader, CardTitle } from '../components/shadcn.jsx'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 
 const toArr = (d, k) => (Array.isArray(d) ? d : d?.[k] ?? [])
 
@@ -35,35 +37,35 @@ export default function EcosystemWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
-        <div className="card-header">
+      <Card className="span-2">
+        <CardHeader>
           <h2>Marketplace &amp; Ecosystem</h2>
-          <input className="search-box" placeholder="Filter suppliers…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search suppliers" />
-        </div>
+          <Input className="search-box" placeholder="Filter suppliers..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search suppliers" />
+        </CardHeader>
         <p className="muted small">Supplier directory, licensed consultant network and the live regional cost database.</p>
         {err && <div className="alert error" role="alert"><strong>Error:</strong> {err}</div>}
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <h3>Supplier Directory</h3>
+      <Card className="span-2">
+        <CardTitle>Supplier Directory</CardTitle>
         {loading ? <Spinner label="Loading suppliers…" /> : filtered.length === 0
           ? <EmptyState icon="🏭" title="No suppliers found" hint="Adjust the search or register a supplier." />
           : (
             <div className="table-wrap">
-              <table className="data-table">
+              <Table>
                 <thead><tr><th>Supplier</th><th>Type</th><th>Region</th><th>Contact</th></tr></thead>
                 <tbody>{filtered.map((s) => (
                   <tr key={s.id}>
                     <td>{s.name}</td><td>{s.type ?? s.category ?? '—'}</td><td>{s.region ?? '—'}</td><td>{s.contact ?? s.email ?? '—'}</td>
                   </tr>
                 ))}</tbody>
-              </table>
+              </Table>
             </div>
           )}
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <h3>Consultant Network</h3>
+      <Card className="span-2">
+        <CardTitle>Consultant Network</CardTitle>
         {loading ? <Spinner label="Loading consultants…" /> : consultants.length === 0
           ? <EmptyState icon="🧑‍🏭" title="No licensed consultants" hint="Book a licensed engineer to review and stamp your design." />
           : (
@@ -73,30 +75,30 @@ export default function EcosystemWorkspace() {
                   <strong>{c.name ?? c.full_name}</strong>
                   <span className="rating" aria-label={`Rating ${c.rating ?? 0} out of 5`}>★ {c.rating ?? '—'} / 5</span>
                   <span className="muted small">{c.specialty ?? c.title ?? 'Structural Engineer'} · {c.region ?? '—'}</span>
-                  <button className="btn small" onClick={() => review(c)}>Request Review</button>
+                  <Button size="sm" onClick={() => review(c)}>Request Review</Button>
                 </div>
               ))}
             </div>
           )}
-      </section>
+      </Card>
 
-      <section className="card span-2">
-        <h3>Regional Cost Database</h3>
+      <Card className="span-2">
+        <CardTitle>Regional Cost Database</CardTitle>
         {loading ? <Spinner label="Loading cost data…" /> : costs.length === 0
           ? <EmptyState icon="💲" title="No cost records" hint="Material unit prices by region and date appear here." />
           : (
             <div className="table-wrap">
-              <table className="data-table">
+              <Table>
                 <thead><tr><th>Material</th><th>Unit</th><th>Price</th><th>Region</th><th>Date</th></tr></thead>
                 <tbody>{costs.map((c) => (
                   <tr key={c.id}>
                     <td>{c.material}</td><td>{c.unit ?? '—'}</td><td>{c.price ?? c.rate}</td><td>{c.region ?? '—'}</td><td>{c.date ?? c.recorded_at ?? '—'}</td>
                   </tr>
                 ))}</tbody>
-              </table>
+              </Table>
             </div>
           )}
-      </section>
+      </Card>
     </div>
   )
 }

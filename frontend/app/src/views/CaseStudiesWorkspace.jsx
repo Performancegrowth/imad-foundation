@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import Seo from '../components/Seo.jsx'
 import { SITE_URL } from '../seoData.js'
+import { Button, Card, CardHeader, Badge } from '../components/shadcn.jsx'
 
 const CASES = [
   {
@@ -55,39 +56,40 @@ export default function CaseStudiesWorkspace() {
         ogDescription="How engineering teams use Imad's generative design to save time and material."
       />
 
-      <section className="card span-2" aria-labelledby="cases-title">
-        <div className="card-header">
+      <Card className="span-2" aria-labelledby="cases-title">
+        <CardHeader>
           <h1 id="cases-title">Case Studies</h1>
           <div className="inline-controls" role="group" aria-label="Choose a case study">
             {CASES.map((cs, i) => (
-              <button
+              <Button
                 key={cs.id}
-                className={`btn small ${i === active ? 'primary' : ''}`}
+                size="sm"
+                variant={i === active ? 'primary' : 'outline'}
                 onClick={() => setActive(i)}
                 aria-pressed={i === active}
               >
                 {cs.sector.split(' · ')[1]}
-              </button>
+              </Button>
             ))}
           </div>
-        </div>
+        </CardHeader>
         <p className="muted">
           Stories of engineering teams using Imad to design faster and build leaner.
         </p>
-      </section>
+      </Card>
 
-      <article className="card span-2" key={c.id}>
-        <div className="card-header">
+      <Card className="span-2" key={c.id}>
+        <CardHeader>
           <h2>{c.title}</h2>
-          <span className="badge success">{c.sector}</span>
-        </div>
+          <Badge variant="success">{c.sector}</Badge>
+        </CardHeader>
         <p>{c.story}</p>
         <ul className="feature-list">
           {c.outcomes.map((o) => (
             <li key={o}>✓ {o}</li>
           ))}
         </ul>
-      </article>
+      </Card>
     </div>
   )
 }

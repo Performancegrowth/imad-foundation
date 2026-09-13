@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { addComment, createTask, getComments, getTasks, updateTask } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { EmptyState, Spinner } from '../components/ui.jsx'
+import { Button, Input, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 
 const fmt = (s) => String(s ?? '').replace('T', ' ').slice(0, 16)
 const COLS = [
@@ -49,17 +50,17 @@ export default function CollaborationWorkspace() {
 
   return (
     <div className="workspace-grid">
-      <section className="card span-2">
+      <Card className="span-2">
         <h2>Collaboration &amp; Task Board</h2>
         <p className="muted small">BIM coordination, comments and a lightweight kanban for project #{projectId}.</p>
         {err && <div className="alert error" role="alert"><strong>Error:</strong> {err}</div>}
-      </section>
+      </Card>
 
-      <section className="card">
-        <div className="card-header">
-          <h3>Comments</h3>
-          <span className="badge">{comments.length}</span>
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Comments</CardTitle>
+          <Badge variant="default">{comments.length}</Badge>
+        </CardHeader>
         <div aria-live="polite">
           {loading ? <Spinner label="Loading comments…" /> : comments.length === 0
             ? <EmptyState icon="💬" title="No comments" hint="Leave feedback on the shared model." />
@@ -71,21 +72,21 @@ export default function CollaborationWorkspace() {
             ))}
         </div>
         <div className="save-row">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a comment…" aria-label="Comment text" />
-          <button className="btn primary" onClick={submitComment}>Post</button>
+          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a comment…" aria-label="Comment text" />
+          <Button variant="primary" onClick={submitComment}>Post</Button>
         </div>
-      </section>
+      </Card>
 
-      <section className="card">
-        <div className="card-header"><h3>Tasks (Kanban)</h3><span className="badge">{tasks.length}</span></div>
+      <Card>
+        <CardHeader><CardTitle>Tasks (Kanban)</CardTitle><Badge variant="default">{tasks.length}</Badge></CardHeader>
         <div className="save-row">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title…" aria-label="Task title" />
-          <button className="btn primary" onClick={submitTask}>Add</button>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title…" aria-label="Task title" />
+          <Button variant="primary" onClick={submitTask}>Add</Button>
         </div>
         <div className="kanban">
           {COLS.map((col) => (
             <div className="kanban-col" key={col.key}>
-              <div className="kanban-head">{col.icon} <span>{col.label}</span> <span className="badge">{byCol(col.key).length}</span></div>
+              <div className="kanban-head">{col.icon} <span>{col.label}</span> <Badge variant="default">{byCol(col.key).length}</Badge></div>
               {loading ? <Spinner label="…" /> : byCol(col.key).length === 0
                 ? <div className="kanban-card muted small">— none —</div>
                 : byCol(col.key).map((t) => (
@@ -99,7 +100,7 @@ export default function CollaborationWorkspace() {
           ))}
         </div>
         <p className="muted small">Click a card to advance it to the next state.</p>
-      </section>
+      </Card>
     </div>
   )
 }

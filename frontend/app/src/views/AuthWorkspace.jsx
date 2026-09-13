@@ -1,6 +1,7 @@
 // Auth screen — unified Login / Sign-up form backed by the JWT API.
 import { useState } from 'react'
 import { login, register } from '../platformApi.js'
+import { Button, Input, Label, Card } from '../components/shadcn.jsx'
 
 export default function AuthWorkspace({ mode = 'login', onDone }) {
   const [mode_, setMode] = useState(mode) // switchable without remount
@@ -55,7 +56,7 @@ export default function AuthWorkspace({ mode = 'login', onDone }) {
 
   return (
     <div className="auth-wrap">
-      <div className="card auth-card" aria-labelledby="auth-heading">
+      <Card className="auth-card" aria-labelledby="auth-heading">
         <h2 id="auth-heading">{isLogin ? 'Log in to Imad' : 'Create your Imad account'}</h2>
         <p className="muted">
           {isLogin
@@ -66,8 +67,8 @@ export default function AuthWorkspace({ mode = 'login', onDone }) {
         <form onSubmit={submit} noValidate>
           {!isLogin && (
             <div className="field">
-              <label htmlFor="auth-name">Full name</label>
-              <input
+              <Label htmlFor="auth-name">Full name</Label>
+              <Input
                 id="auth-name" type="text" autoComplete="name" required
                 value={fullName} onChange={(e) => setFullName(e.target.value)}
                 placeholder="Eng. Your Name"
@@ -75,16 +76,16 @@ export default function AuthWorkspace({ mode = 'login', onDone }) {
             </div>
           )}
           <div className="field">
-            <label htmlFor="auth-email">Email</label>
-            <input
+            <Label htmlFor="auth-email">Email</Label>
+            <Input
               id="auth-email" type="email" autoComplete="email" required
               value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
             />
           </div>
           <div className="field">
-            <label htmlFor="auth-pass">Password</label>
-            <input
+            <Label htmlFor="auth-pass">Password</Label>
+            <Input
               id="auth-pass" type="password" required
               autoComplete={isLogin ? 'current-password' : 'new-password'}
               value={password} onChange={(e) => setPassword(e.target.value)}
@@ -92,18 +93,18 @@ export default function AuthWorkspace({ mode = 'login', onDone }) {
             />
           </div>
           <div className="auth-actions-row">
-            <button type="submit" className="btn primary" disabled={busy} aria-busy={busy}>
+            <Button type="submit" variant="primary" disabled={busy} aria-busy={busy}>
               {busy ? 'Please wait…' : isLogin ? 'Log in' : 'Create account'}
-            </button>
+            </Button>
           </div>
         </form>
         <p className="auth-alt">
           {isLogin ? "Don't have an account? " : 'Already have an account? '}
-          <button type="button" onClick={() => { setErr(''); setMode(isLogin ? 'register' : 'login') }}>
+          <Button variant="link" onClick={() => { setErr(''); setMode(isLogin ? 'register' : 'login') }}>
             {isLogin ? 'Sign up free' : 'Log in'}
-          </button>
+          </Button>
         </p>
-      </div>
+      </Card>
     </div>
   )
 }
