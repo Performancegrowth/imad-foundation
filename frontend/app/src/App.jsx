@@ -73,10 +73,7 @@ function Sidebar({ onOpenPalette }) {
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
       <div className="brand">
-        <img src="/logo.svg" alt="Imad logo" className="brand-logo" width="40" height="40" />
-        {!collapsed && (
-          <div className="brand-text"><strong>Imad</strong><span>Engineering Engine</span></div>
-        )}
+        <img src="/logo.svg" alt="IMAD" className="brand-logo" height="32" />
       </div>
       <nav aria-label="Workspace">
         {pid == null && !collapsed && (
@@ -111,7 +108,7 @@ function Sidebar({ onOpenPalette }) {
         })}
       </nav>
       <div className="sidebar-footer">
-        {!collapsed && <span className="version">v0.9 · Sprints 0–14</span>}
+        {!collapsed && <span className="version">v0.9 · Sprints 0–14 · Guest</span>}
         <button type="button" className="im-collapse" onClick={toggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           {collapsed ? '»' : '«'}
         </button>
@@ -146,6 +143,7 @@ function Shell() {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('imad_theme') || 'light' } catch { return 'light' }
   })
+  const isLanding = pathname === '/welcome'
   useEffect(() => {
     try {
       document.documentElement.dataset.theme = theme
@@ -188,7 +186,7 @@ function Shell() {
           </div>
         </header>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-        <section className="workspace">
+        <section className={isLanding ? 'workspace landing-wrap' : 'workspace'}>
           <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>}>
             <Routes>
               <Route path="/" element={<Navigate to="/create-plan" replace />} />
