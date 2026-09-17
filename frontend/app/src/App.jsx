@@ -189,7 +189,7 @@ function Shell() {
         <section className={isLanding ? 'workspace landing-wrap' : 'workspace'}>
           <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>}>
             <Routes>
-              <Route path="/" element={<Navigate to="/create-plan" replace />} />
+              <Route path="/" element={<LandingWorkspace onNav={(id) => navigate(pathFor(id))} onAuth={openAuth} />} />
               <Route path="/welcome" element={<LandingWorkspace onNav={(id) => navigate(pathFor(id))} onAuth={openAuth} />} />
               <Route path="/auth" element={<AuthWorkspace mode={authMode} key={authMode} onDone={handleAuthed} />} />
               <Route path="/create-plan" element={<CreatePlanWorkspace />} />

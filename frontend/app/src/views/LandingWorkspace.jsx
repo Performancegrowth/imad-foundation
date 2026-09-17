@@ -120,7 +120,7 @@ export default function LandingWorkspace({ onNav, onAuth }) {
           <h1 className="fade-up fade-up-1">Autonomous structural engineering for the MENA region.</h1>
           <p className="landing-hero-desc fade-up fade-up-2">Design, analyze, and submit in minutes. Not weeks.</p>
           <div className="landing-hero-btns fade-up fade-up-3">
-            <button type="button" className="sp-btn sp-btn-white" onClick={go(onAuth, 'register')} aria-label="Create your free Imad account">
+            <button type="button" className="sp-btn sp-btn-white" onClick={go(onNav, 'plan')} aria-label="Create your free Imad account">
               Start a Project
             </button>
             <button type="button" className="sp-btn sp-btn-outline-light" onClick={go(onNav, 'case-studies')}>
@@ -212,7 +212,7 @@ export default function LandingWorkspace({ onNav, onAuth }) {
           <span className="eyebrow">Get started</span>
           <h2 id="landing-cta-h">Ready to design your next project?</h2>
           <p>Create a free account and run your first structural design in minutes.</p>
-          <button type="button" className="sp-btn sp-btn-blue-text" onClick={go(onAuth, 'register')}>
+          <button type="button" className="sp-btn sp-btn-blue-text" onClick={go(onNav, 'plan')}>
             Start a Project
           </button>
         </div>
