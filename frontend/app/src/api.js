@@ -43,8 +43,30 @@ async function request(path, options = {}) {
     } catch {
       /* keep statusText */
     }
-    const err = new Error(detail)
+    // FastAPI returns either a plain string, or (for 422) a list of
+    // {loc, msg, type} objects. Flatten both into a readable string so the
+    // UI never renders "[object Object]".
+    let message
+    if (typeof detail === 'string') {
+      message = detail
+    } else if (Array.isArray(detail)) {
+      message = detail
+        .map((item) => {
+          if (item && typeof item.msg === 'string') {
+            const where = Array.isArray(item.loc) ? item.loc.join('.') : ''
+            return where ? `${where}: ${item.msg}` : item.msg
+          }
+          return JSON.stringify(item)
+        })
+        .join('; ')
+    } else if (detail && typeof detail === 'object') {
+      message = JSON.stringify(detail)
+    } else {
+      message = String(detail)
+    }
+    const err = new Error(message || `Request failed (${res.status})`)
     err.status = res.status
+    err.detail = detail
     throw err
   }
   return res.json()

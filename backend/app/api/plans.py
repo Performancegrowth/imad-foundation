@@ -11,8 +11,10 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user, require_owner
+from app.core.database import get_session
+from app.core.dependencies import get_current_user, require_owner, verify_project_owner
 from app.core.security import TokenPayload
 from app.models.plan_data import PlanData
 from app.services.noncad_processor import (
@@ -97,7 +99,17 @@ async def description(payload: DescriptionRequest, user: TokenPayload = Depends(
 
 
 @router.post("/save", summary="Persist a plan for a project")
-async def save(payload: SavePlanRequest, user: TokenPayload = Depends(require_owner)):
+async def save(
+    payload: SavePlanRequest,
+    user: TokenPayload = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    # ``project_id`` arrives inside the JSON body, so it cannot be injected
+    # via ``Depends(require_owner)`` — that dependency declares ``project_id``
+    # as a function argument, which FastAPI resolves as a required QUERY
+    # parameter and therefore rejected every save with 422. Resolve ownership
+    # explicitly with the helper written for exactly this case.
+    verify_project_owner(payload.project_id, user, db)
     try:
         plan = PlanData(**payload.plan)
     except Exception as exc:

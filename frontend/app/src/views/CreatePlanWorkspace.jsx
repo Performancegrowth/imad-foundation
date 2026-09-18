@@ -107,8 +107,18 @@ export default function CreatePlanWorkspace() {
       setActiveProject(projectId)
       setNotice(`Plan "${planName.trim()}" saved to project #${projectId} — opening Survey…`); refreshSaved(projectId)
       setTimeout(() => navigate(`/project/${projectId}/survey`), 900)
-    } catch (err) { setError(err.message || 'Save failed') }
-    finally { setBusy(false) }
+    } catch (err) {
+      // Surface the real backend message. FastAPI returns a plain string, or
+      // a list of {loc, msg} objects for 422 — flattening it here avoids the
+      // useless "[object Object]" the user used to see.
+      let msg = 'Save failed'
+      const d = err?.response?.data?.detail ?? err?.detail
+      if (typeof d === 'string') msg = d
+      else if (Array.isArray(d) && d[0]?.msg) msg = d.map((x) => x.msg).join('; ')
+      else if (d && typeof d === 'object') msg = JSON.stringify(d)
+      else if (err?.message) msg = err.message
+      setError(msg)
+    } finally { setBusy(false) }
   }
 
   return (
