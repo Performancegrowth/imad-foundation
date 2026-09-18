@@ -20,6 +20,7 @@ from app.services.noncad_processor import (
     PlanGenerator,
     TEMPLATE_LIBRARY,
 )
+from app.services.ai_provider import OllamaLocalProvider
 
 log = logging.getLogger("imad.api.plans")
 # NOTE: no router-level auth dependency — /templates is intentionally public
@@ -27,7 +28,11 @@ log = logging.getLogger("imad.api.plans")
 # its own ``Depends(require_owner)`` guard.
 router = APIRouter()
 
-_generator = PlanGenerator()
+# Description → plan generation asks the local Ollama model first and falls
+# back to the deterministic natural-language parser inside PlanGenerator on
+# any failure (unreachable, timeout, malformed JSON), so the endpoint always
+# returns a valid plan. ``plan.source`` reports which path was used.
+_generator = PlanGenerator(ai=OllamaLocalProvider())
 
 
 class QuestionnaireRequest(BaseModel):
