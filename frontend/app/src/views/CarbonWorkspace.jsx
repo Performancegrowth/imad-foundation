@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { useProjectPlan } from '../useProjectPlan'
-import { Button, Select, Card, CardHeader, CardTitle } from '../components/shadcn.jsx'
+import { Button, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { AreaChart, ProgressBar } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
-import { EmptyState, StatCard } from '../components/ui.jsx'
+import { EmptyState, StatCard, LoadingCard, NextStep } from '../components/ui.jsx'
+import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
 
 const fmt = (v, d = 1) => Number(v ?? 0).toLocaleString(undefined,
   { maximumFractionDigits: d })
@@ -65,16 +66,17 @@ export default function CarbonWorkspace() {
   const metCount = complianceEntries.filter(([, v]) => !!v).length
 
   if (!projectId) return <NoProject />
+  if (planLoading && !currentPlan && !report) return <LoadingCard label="Loading plan..." />
 
   return (
     <div className="workspace-grid">
+      <WorkflowStepper projectId={projectId} currentKey="carbon" />
       <Card className="span-2" aria-labelledby="carbon-title">
                 <h2 id="carbon-title">Sustainability &amp; Embodied Carbon</h2>
         {currentPlan && <Badge variant="default">{currentPlan.label || currentPlan.name}</Badge>
         }
-        <p className="muted">
-          Cradle-to-gate LCA from the BOQ using published emission factors
-          (ICE v3.0, worldsteel), with green alternatives and LEED / Mostadam / Estidama mapping.
+        <p className="muted subtitle">
+          Embodied carbon assessment and green material alternatives.
         </p>
         <div className="inline-controls wrap">
           <label htmlFor="carbon-plan" className="sr-only">Saved plan</label>
@@ -94,6 +96,11 @@ export default function CarbonWorkspace() {
         {!planName && plans.length === 0 && (
           <EmptyState icon="🌱" title="Nothing to assess yet"
                       hint="Generate a BOQ-able plan first — carbon is computed from its quantities." />
+        )}
+        {!planName && plans.length === 0 && (
+          <div style={{ textAlign: 'center' }}>
+            <a className="btn-primary on-light" href="/create-plan">Go to Create Plan</a>
+          </div>
         )}
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
       </Card>
@@ -176,6 +183,10 @@ export default function CarbonWorkspace() {
             </ul>
           </Card>
         </>
+      )}
+
+      {report && (
+        <NextStep nextLabel="3D Model" nextHref={`/project/${projectId}/3d`} />
       )}
     </div>
   )

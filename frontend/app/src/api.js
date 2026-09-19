@@ -93,6 +93,10 @@ export const api = {
   savePlan: (projectId, name, plan) =>
     request('/plans/save', { method: 'POST', body: { project_id: projectId, name, plan } }),
   listPlans: (projectId) => request(`/plans/${projectId}`),
+  // Full geometry for one saved plan (GET /plans/{id}/{name} returns a whole
+  // PlanData; listPlans above returns metadata with counts only).
+  getPlan: (projectId, name) =>
+    request(`/plans/${projectId}/${encodeURIComponent(name)}`),
   // Projects — used to resolve/auto-create an owned project before saving plans.
   listProjects: () => request('/projects'),
   createProject: (data) => request('/projects', { method: 'POST', body: data }),

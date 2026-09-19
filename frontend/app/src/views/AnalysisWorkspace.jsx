@@ -6,6 +6,8 @@ import { useProjectPlan } from '../useProjectPlan'
 import StructureViewer from '../components/StructureViewer.jsx'
 import { Button } from '../components/shadcn.jsx'
 import { Select } from '../components/shadcn.jsx'
+import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
+import { LoadingCard, EmptyCard, NextStep } from '../components/ui.jsx'
 import { Card, CardHeader, CardTitle } from '../components/shadcn.jsx'
 import { Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
@@ -43,35 +45,41 @@ function makeDemoPlan() {
 }
 
 export default function AnalysisWorkspace() {
-      const [plan, setPlan] = useState(null)
   const [result, setResult] = useState(null)
   const [compliance, setCompliance] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
   const projectId = useProjectId()
-  const { plan: defaultPlan, loading: planLoading } = useProjectPlan()
+  const { plan: savedPlan, loading: planLoading } = useProjectPlan()
   const [savedPlans, setSavedPlans] = useState([])
   const [selectedName, setSelectedName] = useState('')
+
+  // The active plan: the analyzed result's plan once an analysis has run,
+  // otherwise the saved plan's full geometry from useProjectPlan — so the
+  // structure viewer and plan label render before any analysis is triggered.
+  const plan = result?.plan || savedPlan
 
   useEffect(() => {
     if (!projectId) return
     api.listPlans(projectId).then(setSavedPlans).catch(() => setSavedPlans([]))
   }, [projectId])
 
-  // Auto-populate from the resolved project plan (default to first saved plan on first load).
+  // Auto-select the first saved plan so "Analyze Saved" works without the user
+  // having to pick one. Uses the metadata slug (savedPlans[0].name) because
+  // that is the identifier GET /plans/{id}/{name} expects — the full plan
+  // object only carries `label`.
   useEffect(() => {
-    if (!defaultPlan || selectedName) return
-    setSelectedName(defaultPlan.name || defaultPlan.label || '')
-  }, [defaultPlan, selectedName])
+    if (selectedName || savedPlans.length === 0) return
+    setSelectedName(savedPlans[0].name || savedPlans[0].label || '')
+  }, [savedPlans, selectedName])
 
   const analyze = useCallback(async (payload) => {
     setBusy(true); setError(null); setResult(null); setCompliance(null)
     try {
       const data = await api.analyze(payload)
-      setResult(data)
       const activePlan = payload.plan || plan
-      setPlan(activePlan)
+      setResult({ ...data, plan: activePlan })
       // Auto-run compliance against the real analysis result so the Analyze
       // tab surfaces whether the design passes code (banner + cross-check).
       try {
@@ -93,9 +101,7 @@ export default function AnalysisWorkspace() {
   }, [plan, projectId])
 
   const analyzeDemo = () => {
-    const p = makeDemoPlan()
-    setPlan(p)
-    analyze({ project_id: projectId, plan: p })
+    analyze({ project_id: projectId, plan: makeDemoPlan() })
   }
 
   const analyzeSaved = () => {
@@ -111,26 +117,28 @@ export default function AnalysisWorkspace() {
     String(c.check_name || '').toLowerCase().includes('cross-check'))
   const crossSections = crossCheck?.details?.sections || []
 
-  const memberChart = (result.member_forces || []).slice(0, 20).map((f) => ({
+  const memberChart = (result?.member_forces || []).slice(0, 20).map((f) => ({
     name: f.element_id,
     Moment: Math.abs(Number(f.moment_kNm) || 0),
     Shear: Math.abs(Number(f.shear_kN) || 0),
     Axial: Math.abs(Number(f.axial_kN) || 0),
   }))
-  const deflectionChart = (result.member_forces || []).slice(0, 20).map((f, i) => ({
+  const deflectionChart = (result?.member_forces || []).slice(0, 20).map((f, i) => ({
     name: f.element_id ?? `M${i + 1}`,
-    Deflection: Math.abs(Number(f.deflection_mm ?? result.summary?.max_deflection_mm ?? 0) || 0),
+    Deflection: Math.abs(Number(f.deflection_mm ?? result?.summary?.max_deflection_mm ?? 0) || 0),
   }))
 
   if (!projectId) return <NoProject />
+  if (planLoading && !plan && !result) return <LoadingCard label="Loading plan..." />
 
   return (
     <div className="workspace-grid">
+      <WorkflowStepper projectId={projectId} currentKey="analyze" />
       <Card className="span-2">
-                <h2>Structural Analysis</h2>
-        {plan && <Badge variant="default">{plan.name || plan.label}</Badge>}
+        <h2>Structural Analysis</h2>
+        {plan && <Badge variant="default">{plan.label || plan.name}</Badge>}
         {planLoading && <Badge variant="default">Loading plan…</Badge>}
-        <p className="muted">Run a linear static + modal analysis (OpenSeesPy, analytic fallback) and a preliminary ACI 318 design + BOQ.</p>
+        <p className="muted subtitle">Run structural analysis and design checks. Review member forces and utilization.</p>
 
         {busy && <div className="alert info" role="status">Running analysis…</div>}
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
@@ -258,12 +266,26 @@ export default function AnalysisWorkspace() {
       )}
 
       {!result && !busy && (
-        <Card className="span-2">
-          <div className="empty">
-            <span className="empty-icon" aria-hidden="true">≣</span>
-            <p>Run an analysis to view the 3D model, forces, design checks and BOQ.</p>
-          </div>
-        </Card>
+        plan ? (
+          <Card className="span-2">
+            <div className="empty">
+              <span className="empty-icon" aria-hidden="true">≣</span>
+              <p>Run an analysis to view the 3D model, forces, design checks and BOQ.</p>
+            </div>
+          </Card>
+        ) : (
+          <Card className="span-2">
+            <div className="empty">
+              <span className="empty-icon" aria-hidden="true">📐</span>
+              <p>No plan yet. Go to Create Plan to generate one, then come back to analyze it.</p>
+              <a className="btn-primary on-light" href="/create-plan">Go to Create Plan</a>
+            </div>
+          </Card>
+        )
+      )}
+
+      {result && (
+        <NextStep nextLabel="BOQ &amp; BBS" nextHref={`/project/${projectId}/boq`} />
       )}
     </div>
   )

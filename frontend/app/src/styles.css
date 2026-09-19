@@ -304,6 +304,33 @@ nav { display: flex; flex-direction: column; gap: 6px; }
 .card h3 { font-size: 15px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
+/* ── Contrast fix ──────────────────────────────────────────────────
+ * Every light-background surface below inherits `color` from <body>,
+ * which is #ffffff (light text meant for the dark shell). On a light
+ * card that renders white-on-white and the text disappears. Pin dark
+ * text explicitly on each light surface. Backgrounds are unchanged.
+ * ---------------------------------------------------------------- */
+.card,
+.card h1,
+.card h2,
+.card h3,
+.card h4,
+.card p,
+.stat,
+.stat strong,
+.saved-list li,
+.check-list li,
+.kanban-card,
+.data-table,
+.data-table td,
+.im-card,
+.im-card-title {
+  color: var(--ink);
+}
+/* Empty-state text is intentionally softer than body ink. */
+.empty-state { color: var(--text-dark-muted); }
+.empty-state h4 { color: var(--ink); }
+
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
 hr.divider { border: none; border-top: 1px solid var(--line); margin: 6px 0; }
@@ -392,6 +419,47 @@ textarea { resize: vertical; }
 /* ── Empty / summary / tables ───────────────────────────────────── */
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 48px 20px; color: var(--muted); text-align: center; }
 .empty-icon { font-size: 34px; opacity: 0.5; }
+/* EmptyState primitive (components/ui.jsx) — was previously unstyled. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  text-align: center;
+}
+.empty-state h4 { margin: 0; font-size: 16px; }
+.empty-state p { margin: 0; font-size: 13.5px; }
+
+/* Spinner primitive (components/ui.jsx) — previously unstyled, so the
+   "Loading…" state rendered as a bare unstyled text row. */
+.spinner-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 16px;
+  font-size: 13.5px;
+  color: var(--text-dark-muted);
+}
+.spinner {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid #d5d5d0;
+  border-top-color: var(--primary);
+  animation: imad-spin 0.8s linear infinite;
+}
+@keyframes imad-spin { to { transform: rotate(360deg); } }
+
+/* ProgressBar fill/value — ProgressBar renders .progress-fill / .progress-value
+   but only .progress-bar / .progress-label were defined. */
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  transition: width 0.2s;
+}
+.progress-value { font-size: 12.5px; color: var(--text-dark-muted); }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; }
 .summary-grid.four { grid-template-columns: repeat(4, 1fr); }
 .stat { background: var(--canvas); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; }
@@ -488,6 +556,107 @@ textarea { resize: vertical; }
 
 @media (max-width: 720px) {
   .userchip { display: none; }
+}
+
+/* ── Workflow stepper + next-step footer (project-scoped views) ───── */
+.workflow-stepper {
+  display: flex;
+  gap: 4px;
+  padding: 12px 0;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-dark, #e6e3e340);
+  overflow-x: auto;
+  grid-column: 1 / -1;   /* full-width row in .workspace-grid */
+}
+.workflow-stepper .step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  color: #ffffff80;
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+.workflow-stepper .step:hover { color: #fff; background: #ffffff10; }
+.workflow-stepper .step.current {
+  background: #3e68ff20;
+  color: #fff;
+  font-weight: 500;
+}
+.workflow-stepper .step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #ffffff10;
+  font-size: 11px;
+  font-weight: 600;
+}
+.workflow-stepper .step.current .step-num {
+  background: #3e68ff;
+  color: #fff;
+}
+.next-step {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  margin-top: 24px;
+  background: #ffffff05;
+  border: 1px solid #e6e3e340;
+  border-radius: 6px;
+  color: #ffffff80;
+  font-size: 14px;
+  grid-column: 1 / -1;   /* full-width row in .workspace-grid */
+}
+.next-step .btn-primary {
+  padding: 8px 16px;
+  background: #fff;
+  color: #030424;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+}
+.next-step .btn-primary:hover { background: #e8e8e8; }
+
+/* Inline CTA used inside empty states (dark cards) */
+.btn-primary.on-dark {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: #fff;
+  color: #030424;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+}
+.btn-primary.on-dark:hover { background: #e8e8e8; }
+
+/* Same CTA on a LIGHT card — white-on-white would vanish, so use brand blue. */
+.btn-primary.on-light {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+}
+.btn-primary.on-light:hover { background: var(--primary-dark); }
+
+/* One-line engineer-intent subtitle under each view title */
+.subtitle {
+  font-size: 15px;
+  line-height: 1.45;
+  margin: 6px 0 12px;
 }
 
 /* ── shadcn/ui primitives (vendored) ─────────────────────────────── */

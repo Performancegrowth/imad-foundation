@@ -3,6 +3,8 @@ import { downloadExport, exportSubmissionDocx, generateSBC304Package, getAuditLo
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { useProjectPlan } from '../useProjectPlan'
 import { EmptyState, Spinner } from '../components/ui.jsx'
+import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
+import { LoadingCard, EmptyCard, NextStep } from '../components/ui.jsx'
 import { Button, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 
@@ -59,9 +61,13 @@ export default function GovernanceWorkspace() {
   const failed = rows.filter((c) => c.status === 'fail').length
 
   if (!projectId) return <NoProject />
+  if (loading && pkg.length === 0 && !report && !readiness) {
+    return <LoadingCard label="Loading compliance data..." />
+  }
 
   return (
     <div className="workspace-grid">
+      <WorkflowStepper projectId={projectId} currentKey="governance" />
       <Card className="span-2">
                 <CardHeader><h2>Governance &amp; Compliance</h2>
           <Badge variant="default">Project #{projectId}</Badge>
@@ -71,6 +77,16 @@ export default function GovernanceWorkspace() {
         {err && <div className="alert error" role="alert"><strong>Error:</strong> {err}</div>}
         <Button variant="primary" onClick={check} disabled={busy}>{busy ? 'Running…' : 'Run Compliance Check'}</Button>
       </Card>
+
+      {!plan && report === null && pkg.length === 0 && (
+        <Card className="span-2">
+          <EmptyState icon="🏛️" title="No compliance data yet"
+            hint="Run a compliance check, or create a plan first so the SBC 304 package has something to verify." />
+          <div style={{ textAlign: 'center' }}>
+            <a className="btn-primary on-light" href="/create-plan">Go to Create Plan</a>
+          </div>
+        </Card>
+      )}
 
       <Card>
         <CardTitle>Compliance Status</CardTitle>
@@ -182,6 +198,8 @@ export default function GovernanceWorkspace() {
             </Table>
           )}
       </Card>
+
+      <NextStep nextLabel="Review &amp; Sign" nextHref={`/project/${projectId}/review`} />
     </div>
   )
 }

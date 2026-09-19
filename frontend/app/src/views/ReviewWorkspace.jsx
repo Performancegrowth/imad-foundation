@@ -3,6 +3,8 @@ import { getAuditLog, requestSignature, runComplianceCheck } from '../platformAp
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { useProjectPlan } from '../useProjectPlan'
 import { EmptyState, ErrorState, Spinner } from '../components/ui.jsx'
+import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
+import { LoadingCard, EmptyCard, NextStep } from '../components/ui.jsx'
 import { Button, Input, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 
@@ -42,9 +44,13 @@ export default function ReviewWorkspace() {
   const rows = checks?.checks ?? checks?.results ?? []
 
   if (!projectId) return <NoProject />
+  if (loading && checks === null && audit.length === 0) {
+    return <LoadingCard label="Loading review data..." />
+  }
 
   return (
     <div className="workspace-grid">
+      <WorkflowStepper projectId={projectId} currentKey="review" />
       <Card className="span-2">
                 <CardHeader>
           <h2>Review &amp; Compliance</h2>
@@ -59,6 +65,16 @@ export default function ReviewWorkspace() {
         </div>
         {error && <ErrorState message={error} onRetry={run} />}
       </Card>
+
+      {!plan && checks === null && audit.length === 0 && (
+        <Card className="span-2">
+          <EmptyState icon="✍️" title="Nothing to review yet"
+            hint="Run the compliance checklist after analysing a plan, then request the engineer signature." />
+          <div style={{ textAlign: 'center' }}>
+            <a className="btn-primary on-light" href="/create-plan">Go to Create Plan</a>
+          </div>
+        </Card>
+      )}
 
       <Card className="span-2">
         <CardTitle>Compliance Checklist</CardTitle>
@@ -109,6 +125,14 @@ export default function ReviewWorkspace() {
             </div>
           )}
       </Card>
+
+      {/* End of workflow — final deliverable is the signed submission package. */}
+      <div className="next-step">
+        <span>End of workflow — the signed package is ready for submission.</span>
+        <button type="button" className="btn-primary on-dark" onClick={() => window.print()}>
+          Export PDF
+        </button>
+      </div>
     </div>
   )
 }

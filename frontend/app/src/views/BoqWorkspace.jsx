@@ -7,7 +7,8 @@ import { useProjectPlan } from '../useProjectPlan'
 import { Button, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 import { DonutChart, BarChart } from '../components/shadcn.jsx'
-import { EmptyState, StatCard } from '../components/ui.jsx'
+import { EmptyState, StatCard, LoadingCard, NextStep } from '../components/ui.jsx'
+import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
 
 const money = (v) => `$${Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 
@@ -71,16 +72,15 @@ export default function BoqWorkspace() {
   const donutData = chartData.slice(0, 8).map((d) => ({ name: d.name, value: d.Amount }))
 
   if (!projectId) return <NoProject />
+  if (planLoading && !currentPlan && !boq) return <LoadingCard label="Loading plan..." />
 
   return (
     <div className="workspace-grid">
+      <WorkflowStepper projectId={projectId} currentKey="boq" />
       <Card className="span-2" aria-labelledby="boq-title">
-                <h2 id="boq-title">Bill of Quantities & Bar Schedule</h2>
+                <h2 id="boq-title">Bill of Quantities &amp; Bar Schedule</h2>
         {currentPlan && <Badge variant="default">{currentPlan.label || currentPlan.name}</Badge>}
-        <p className="muted">
-          Detailed take-off across concrete, rebar, formwork, earthworks and
-          waterproofing — with a cutting-optimised bar bending schedule (waste target &lt; 2%).
-        </p>
+        <p className="muted subtitle">Material takeoff, bar bending schedule, and cost estimate from the design.</p>
         <div className="inline-controls wrap">
           <label htmlFor="boq-plan" className="sr-only">Saved plan</label>
           <Select id="boq-plan" value={planName} onChange={(e) => setPlanName(e.target.value)}>
@@ -104,6 +104,11 @@ export default function BoqWorkspace() {
         {!planName && plans.length === 0 && (
           <EmptyState icon="📋" title="No saved plans yet"
                       hint="Create a plan first (CAD import or Create Plan), then generate its BOQ here." />
+        )}
+        {!planName && plans.length === 0 && (
+          <div style={{ textAlign: 'center' }}>
+            <a className="btn-primary on-light" href="/create-plan">Go to Create Plan</a>
+          </div>
         )}
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
       </Card>
@@ -201,6 +206,10 @@ export default function BoqWorkspace() {
             )}
           </Card>
         </>
+      )}
+
+      {boq && (
+        <NextStep nextLabel="Sustainability" nextHref={`/project/${projectId}/carbon`} />
       )}
     </div>
   )

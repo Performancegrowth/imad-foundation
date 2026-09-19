@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { Button, Input, Label, Select, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
+import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
+import { LoadingCard, EmptyState, NextStep } from '../components/ui.jsx'
 
 const EMPTY = {
   soil_bearing_capacity_kpa: '',
@@ -18,6 +20,7 @@ const EMPTY = {
 export default function SurveyWorkspace() {
   const [form, setForm] = useState(EMPTY)
   const [summary, setSummary] = useState(null)
+  const [summaryLoading, setSummaryLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -27,7 +30,10 @@ export default function SurveyWorkspace() {
 
   const refreshSummary = () => {
     if (!projectId) return
-    api.getSurvey(projectId).then(setSummary).catch(() => setSummary(null))
+    api.getSurvey(projectId)
+      .then(setSummary)
+      .catch(() => setSummary(null))
+      .finally(() => setSummaryLoading(false))
   }
   useEffect(refreshSummary, [projectId])
 
@@ -70,9 +76,11 @@ export default function SurveyWorkspace() {
   const num = (v) => (v === null || v === undefined || v === '' ? '—' : Number(v).toLocaleString())
 
   if (!projectId) return <NoProject />
+  if (summaryLoading) return <LoadingCard label="Loading survey..." />
 
   return (
     <div className="workspace-grid">
+      <WorkflowStepper projectId={projectId} currentKey="survey" />
       <Card className="span-2">
         <h2>Site Survey &amp; Geotechnics</h2>
         <p className="muted">Record site constraints that drive foundation selection and earthwork design.</p>
@@ -213,10 +221,16 @@ export default function SurveyWorkspace() {
             <strong>{summary?.wind_exposure || 'B'}</strong>
           </div>
         </div>
+        {!summary?.entries && (
+          <EmptyState icon="🌍" title="No survey data yet"
+            hint="Fill the form or upload a geotech report — bearing capacity and seismic inputs drive the foundation design." />
+        )}
         <p className="muted small" style={{ marginTop: 12 }}>
-          {summary?.message || 'No survey data yet — record site inputs on the left.'}
+          {summary?.message || (summary?.entries ? '' : 'Recorded values appear here once you save a reading.')}
         </p>
       </Card>
+
+      <NextStep nextLabel="Create Plan" nextHref="/create-plan" />
     </div>
   )
 }

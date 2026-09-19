@@ -5,6 +5,7 @@ import { readStoredProject } from '../useProjectId.jsx'
 import PlanViewer from '../components/PlanViewer.jsx'
 import { Button, Input, Textarea, Label, Select } from '../components/shadcn.jsx'
 import { Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
+import { LoadingCard, NextStep } from '../components/ui.jsx'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/shadcn.jsx'
 
 const TABS = ['questionnaire', 'templates', 'description']
@@ -121,12 +122,13 @@ export default function CreatePlanWorkspace() {
     } finally { setBusy(false) }
   }
 
+  if (resolvingProject) return <LoadingCard label="Preparing your workspace..." />
+
   return (
     <div className="workspace-grid">
       <Card className="span-2">
         <h2>Create a Structural Plan</h2>
         <p className="muted">No CAD file? Build a plan from a questionnaire, a ready template, or a plain-language description.</p>
-        {resolvingProject && <div className="alert info" role="status">Checking your projects…</div>}
         {!resolvingProject && projectId && <p className="muted small">Saving to <strong>project #{projectId}</strong> — saved plans feed Survey, Analysis &amp; BOQ.</p>}
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -300,6 +302,10 @@ export default function CreatePlanWorkspace() {
           </div>
         )}
       </Card>
+
+      {plan && projectId && (
+        <NextStep nextLabel="Analyze" nextHref={`/project/${projectId}/analyze`} />
+      )}
     </div>
   )
 }

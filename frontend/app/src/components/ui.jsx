@@ -1,6 +1,56 @@
+// Shared building blocks for project-scoped workspaces:
+// LoadingCard (loading state), EmptyCard (empty state w/ CTA),
+// NextStep (bottom "next action" footer).
+
 // Shared UI primitives for Imad workspaces — charts, progress, empty/error
 // states. Pure inline-SVG so no chart library dependency is required.
 import { useState } from 'react'
+
+export function LoadingCard({ label = 'Loading…' }) {
+  return (
+    <div className="workspace-grid">
+      <div className="card span-2">
+        <div className="spinner-row" role="status">
+          <span className="spinner" aria-hidden="true" />
+          {label}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function EmptyCard({
+  title = 'No plan yet',
+  description = 'Create a plan first, then come back here.',
+  ctaLabel = 'Go to Create Plan',
+  ctaHref = '/create-plan',
+}) {
+  return (
+    <div className="workspace-grid">
+      <div className="card span-2">
+        <div className="empty-state" role="note">
+          <span className="empty-icon" aria-hidden="true">📐</span>
+          <h4>{title}</h4>
+          <p className="muted">{description}</p>
+          <a className="btn-primary on-light" href={ctaHref}>{ctaLabel}</a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function NextStep({ nextLabel, nextHref }) {
+  if (!nextLabel || !nextHref) return null
+  return (
+    <div className="next-step">
+      <span>Next: {nextLabel}</span>
+      <a href={nextHref} className="btn-primary on-dark">Continue</a>
+    </div>
+  )
+}
+
+// Shared UI primitives for Imad workspaces — charts, progress, empty/error
+// states. Pure inline-SVG so no chart library dependency is required.
 
 export function ProgressBar({ value = 0, label }) {
   const pct = Math.round(Math.min(Math.max(value, 0), 1) * 100)

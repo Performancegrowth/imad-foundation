@@ -5,6 +5,8 @@ import { getVisualizationData } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { useProjectPlan } from '../useProjectPlan'
 import { Button, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
+import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
+import { LoadingCard, EmptyCard, NextStep } from '../components/ui.jsx'
 
 // Real building 3D viewer (roadmap #31).
 // Two modes:
@@ -142,11 +144,25 @@ export default function Building3DWorkspace() {
   }, [nodes])
 
   if (!projectId) return <NoProject />
+  if (loading) return <LoadingCard label="Loading building model..." />
+
+  // EMPTY — the scene resolved but carries no structural geometry.
+  if (!nodes.length) {
+    return (
+      <EmptyCard
+        title="No 3D geometry yet"
+        description={error || 'No structural geometry found. Create a plan, then run the analysis so the model has members to show.'}
+        ctaLabel="Go to Create Plan"
+        ctaHref="/create-plan"
+      />
+    )
+  }
 
   const floorBtns = ['all', ...Array.from({ length: stories }, (_, i) => String(i))]
 
   return (
     <div className="workspace-grid">
+      <WorkflowStepper projectId={projectId} currentKey="building3d" />
       <Card className="span-2">
         <CardHeader>
           <CardTitle>3D Building View</CardTitle>
@@ -155,6 +171,9 @@ export default function Building3DWorkspace() {
             {plan && <Badge variant="success">{plan.label || plan.name}</Badge>}
           </div>
         </CardHeader>
+        <p className="muted subtitle">
+          Visualize the full building model. Check geometry before submission.
+        </p>
         <p className="muted small">
           {mode === 'engineer'
             ? 'Real designed structure, coloured by utilisation (green = safe, red = over capacity).'
@@ -185,6 +204,8 @@ export default function Building3DWorkspace() {
           <p className="muted small">Run analysis to see utilisation colours.</p>
         )}
       </Card>
+
+      <NextStep nextLabel="Review &amp; Sign" nextHref={`/project/${projectId}/review`} />
     </div>
   )
 }
