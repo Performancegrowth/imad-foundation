@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.dependencies import get_current_user
-from app.core.storage import result_id, save_result, list_results, load_result
+from app.core.storage import result_id, save_result, list_results
 from app.models.plan_data import PlanData
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
 
@@ -40,28 +40,31 @@ class GltfExportRequest(BaseModel):
 def _latest_plan_name(project_id: int) -> Optional[str]:
     """Find the most recent saved plan name for a project."""
     try:
-        names = PlanGenerator.list_plans(project_id)
+        entries = PlanGenerator.list_plans(project_id)
     except Exception:
-        names = []
+        entries = []
+    names = [e.get("name") if isinstance(e, dict) else e for e in entries]
+    names = [n for n in names if isinstance(n, str) and n]
     return names[-1] if names else None
 
 
 def _latest_analysis(project_id: int) -> Dict[str, Any]:
     """Find the most recent completed analysis result for a project."""
-    results = list_results(prefix="an") or []
-    for rid in reversed(results):
-        try:
-            r = load_result(rid) or {}
-        except Exception:
+    try:
+        records = list_results(kind="an", project_id=project_id) or []
+    except Exception:
+        return {}
+    for record in reversed(records):
+        payload = (record or {}).get("payload") or {}
+        if payload.get("status") != "completed":
             continue
-        if r.get("project_id") == project_id and r.get("status") == "completed":
-            return {
-                "member_forces": [f.__dict__ if hasattr(f, "__dict__") else f
-                                  for f in r.get("member_forces", [])],
-                "design": r.get("design", {}),
-                "reactions": r.get("reactions", {}),
-                "loads": r.get("loads", {}),
-            }
+        return {
+            "member_forces": [f.__dict__ if hasattr(f, "__dict__") else f
+                              for f in payload.get("member_forces", [])],
+            "design": payload.get("design", {}),
+            "reactions": payload.get("reactions", {}),
+            "loads": payload.get("loads", {}),
+        }
     return {}
 
 

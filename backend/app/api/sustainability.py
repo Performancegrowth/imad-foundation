@@ -24,6 +24,7 @@ from app.services.carbon_calculator import (
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
+from app.services.survey_processor import load_survey_reading
 from app.core.security import TokenPayload
 from sqlalchemy.orm import Session
 
@@ -91,15 +92,16 @@ async def run_carbon(data: Dict[str, Any]) -> Dict[str, Any]:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     elif request.plan_name:
         try:
-            saved = PlanGenerator.load_plan(request.project_id, request.plan_name)
+            # load_plan returns a PlanData already (same as /analyze, /generate-boq)
+            plan = PlanGenerator.load_plan(request.project_id, request.plan_name)
         except PlanGenerationError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raw_plan = saved.get("plan") or saved.get("plan_data") or {}
         try:
-            plan = PlanData(**raw_plan)
+            survey = (SurveyReading(**request.survey) if request.survey
+                      else load_survey_reading(request.project_id))
             boq = generate_boq(
                 plan,
-                SurveyReading(**(saved.get("survey") or {})) or None,
+                survey,
                 project_name=request.project_name,
             )
         except (BOQError, TypeError) as exc:
