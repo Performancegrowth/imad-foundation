@@ -10,6 +10,7 @@ import BoqWorkspace from './views/BoqWorkspace.jsx'
 import CarbonWorkspace from './views/CarbonWorkspace.jsx'
 import PricingWorkspace from './views/PricingWorkspace.jsx'
 import ValidationWorkspace from './views/ValidationWorkspace.jsx'
+import ProofWorkspace from './views/ProofWorkspace.jsx'
 import ReviewWorkspace from './views/ReviewWorkspace.jsx'
 import CollaborationWorkspace from './views/CollaborationWorkspace.jsx'
 import EcosystemWorkspace from './views/EcosystemWorkspace.jsx'
@@ -45,6 +46,7 @@ const NAV = [
   { id: 'review', label: 'Review & Sign', icon: '✍️', to: '/project/:projectId/review', scoped: true },
   { id: 'admin', label: 'Admin', icon: '🛡️', to: '/project/:projectId/admin', scoped: true },
   { id: 'pricing', label: 'Pricing', icon: '💳', to: '/pricing' },
+  { id: 'proof', label: 'Proof', icon: '✓', to: '/proof' },
   { id: 'blog', label: 'Blog', icon: '✍️', to: '/blog' },
   { id: 'faq', label: 'FAQ', icon: '❓', to: '/faq' },
   { id: 'case-studies', label: 'Case Studies', icon: '📁', to: '/case-studies' },
@@ -207,6 +209,7 @@ function Shell() {
               <Route path="/project/:projectId/review" element={<ReviewWorkspace />} />
               <Route path="/project/:projectId/admin" element={<AdminWorkspace />} />
               <Route path="/pricing" element={<PricingWorkspace />} />
+              <Route path="/proof" element={<ProofWorkspace />} />
               <Route path="/blog" element={<BlogWorkspace />} />
               <Route path="/faq" element={<FaqWorkspace />} />
               <Route path="/case-studies" element={<CaseStudiesWorkspace />} />

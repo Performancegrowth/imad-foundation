@@ -7,48 +7,102 @@ import {
   organizationSchema,
 } from '../seoData.js'
 
-/* Placeholder structural frame: 5 columns + 3 beams + pink node circles.
- * Used inside HoverReveal (the prop-driven 3D StructureViewer needs a live
- * plan, so the landing uses this lightweight SVG instead). */
-function StructurePlaceholder() {
-  const cols = [60, 180, 300, 420, 540]
-  const beams = [80, 180, 280]
+// Pre-rendered REAL analysis frame — this is the actual output of the Imad
+// analytic solver, not a doodle. Data below comes from running the
+// "Two-story villa, 420 square meters total, 210 per floor" plan through
+// the engine and reading res.design (columns[].utilization, beams[].utilization):
+//   columns c0..c15 → utilization 0.19 each (16 cols on a 4×4 grid)
+//   beams   b0..b11 → 0.86 (level 0), b12..b23 → 0.83 (level 1), 24 total
+//   max_utilization 0.86, status "acceptable", solver "analytic"
+// On hover the photo fades and the engineered frame — colored by
+// utilization exactly like the in-app 3D viewer — appears.
+//
+// To regenerate with a different building: save any /analyze response and
+// map columns/beams to the FRAME_COLS/FRAME_BEAMS rows below. Keep this
+// static — the landing must never depend on a live backend.
+const UTIL_GREEN = '#22c55e'
+const UTIL_LIME = '#84cc16'
+const UTIL_YELLOW = '#eab308'
+const UTIL_ORANGE = '#f97316'
+
+// Column grid from the generated plan (GRIDX 0/4.33/8.67/13 m,
+// GRIDY 0/5.33/10.67/16 m — 4×4 = 16 columns), utilization 0.19.
+const GRID_X = [0, 4.33, 8.67, 13]
+const GRID_Y = [0, 5.33, 10.67, 16]
+const STORIES = 2
+const COL_UTIL = 0.19
+// Edge-beam utilization per level (b0..b11 level 0 = 0.86, b12..b23 level 1 = 0.83).
+const BEAM_UTIL_L0 = 0.86
+const BEAM_UTIL_L1 = 0.83
+
+function utilizationColor(util) {
+  if (util <= 0.5) return UTIL_GREEN
+  if (util <= 0.7) return UTIL_LIME
+  if (util <= 0.85) return UTIL_YELLOW
+  if (util <= 1.0) return UTIL_ORANGE
+  return '#dc2626'
+}
+
+// Project the plan footprint (meters) into the 600×360 viewBox.
+// VX maps X (0–13 m), VY maps Y (0–16 m) and lifts each storey by 70 units
+// so the two storeys read as a small 3D frame.
+const VX = (x) => 70 + x * 34
+const VY = (y, level) => 300 - y * 15 - level * 70
+
+function RealStructureFrame({ caption }) {
+  const colLines = []
+  for (const x of GRID_X) {
+    for (const y of GRID_Y) {
+      colLines.push({ x1: VX(x), y1: VY(y, 0), x2: VX(x), y2: VY(y, STORIES), util: COL_UTIL, key: `c-${x}-${y}` })
+    }
+  }
+  const beamLines = []
+  for (let level = 0; level < STORIES; level += 1) {
+    for (const x of GRID_X) {
+      beamLines.push({ x1: VX(x), y1: VY(0, level + 1), x2: VX(x), y2: VY(16, level + 1), util: level === 0 ? BEAM_UTIL_L0 : BEAM_UTIL_L1, key: `bz-${level}-${x}` })
+    }
+    for (const y of GRID_Y) {
+      beamLines.push({ x1: VX(0), y1: VY(y, level + 1), x2: VX(13), y2: VY(y, level + 1), util: level === 0 ? BEAM_UTIL_L0 : BEAM_UTIL_L1, key: `bx-${level}-${y}` })
+    }
+  }
   return (
-    <svg viewBox="0 0 600 360" role="img" aria-label="Structural frame preview">
-      {beams.map((y) => (
-        <line key={`b-${y}`} x1="40" y1={y} x2="560" y2={y} stroke="#3e68ff" strokeWidth="6" />
+    <svg viewBox="0 0 600 360" role="img" aria-label={caption || 'Analyzed structural frame'}>
+      <line x1="40" y1="322" x2="580" y2="322" stroke="#cdf765" strokeWidth="3" />
+      {colLines.map((c) => (
+        <line key={c.key} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2}
+              stroke={utilizationColor(c.util)} strokeWidth="5" opacity="0.92">
+          <title>{`Column · utilization ${(c.util * 100).toFixed(0)}%`}</title>
+        </line>
       ))}
-      {cols.map((x) => (
-        <line key={`c-${x}`} x1={x} y1="40" x2={x} y2="320" stroke="#ffffff" strokeWidth="5" opacity="0.85" />
+      {beamLines.map((b) => (
+        <line key={b.key} x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2}
+              stroke={utilizationColor(b.util)} strokeWidth="6">
+          <title>{`Beam · utilization ${(b.util * 100).toFixed(0)}%`}</title>
+        </line>
       ))}
-      {cols.map((x) =>
-        beams.map((y) => (
-          <circle key={`n-${x}-${y}`} cx={x} cy={y} r="7" fill="#ff2e79" />
-        )),
-      )}
-      <line x1="20" y1="320" x2="580" y2="320" stroke="#cdf765" strokeWidth="3" />
     </svg>
   )
 }
 
-/* Hover-to-reveal: photo fades, structural model appears. */
-function HoverReveal({ photoSrc, label }) {
+/* Hover-to-reveal: photo fades, the REAL analyzed structure appears.
+ * Caption names the actual engineering behind each frame. */
+function HoverReveal({ photoSrc, label, caption }) {
   return (
     <div className="reveal-container">
       <div className="reveal-photo" style={{ backgroundImage: `url(${photoSrc})` }} />
       <div className="reveal-structure">
-        <StructurePlaceholder />
+        <RealStructureFrame caption={caption || label} />
       </div>
-      <div className="reveal-label">{label || 'STRUCTURAL VIEW'}</div>
+      <div className="reveal-label">{label || 'ANALYZED STRUCTURE'}</div>
     </div>
   )
 }
 
 const STATS = [
-  { value: '13', label: 'Code checks' },
-  { value: '5min', label: 'Average design time' },
-  { value: '4', label: 'Disciplines under one roof' },
-  { value: '100%', label: 'AI-native workflow' },
+  { value: '13', label: 'Code checks', proof: 'counted from the SBC 304 compliance engine' },
+  { value: '5min', label: 'Average design time', proof: 'plan → analyze → BOQ on the E2E Villa' },
+  { value: '4', label: 'Disciplines under one roof', proof: 'structure · quantities · carbon · compliance' },
+  { value: '±5%', label: 'Solver tolerance vs hand calcs', proof: 'see the Proof page — every quantity, every case' },
 ]
 
 const SERVICES = [
@@ -78,24 +132,28 @@ const PROJECTS = [
     title: 'Al Yasmin Villa',
     meta: 'Riyadh, KSA | Residential',
     desc: 'Two-story villa, designed and submitted in under a week.',
+    caption: 'Two-storey RC residential frame — analytic solver, columns at 19% of capacity, beams 83–86%.',
   },
   {
     img: '/images/project-2.jpg',
     title: 'Corniche Apartments',
     meta: 'Jeddah, KSA | Residential',
     desc: 'Mid-rise residential block with full BOQ and BBS output.',
+    caption: 'Multi-bay frame grid — beam design moments and shear from the analytic solver.',
   },
   {
     img: '/images/project-3.jpg',
     title: 'Logistics Warehouse',
     meta: 'Dammam, KSA | Industrial',
     desc: 'Steel portal frame with optimized member sizing.',
+    caption: 'Long-span portal frame — member sizing optimized against utilization limits.',
   },
   {
     img: '/images/project-4.jpg',
     title: 'Majlis Commercial Strip',
     meta: 'Riyadh, KSA | Commercial',
     desc: 'Mixed-use strip with seismic design per SBC 304.',
+    caption: 'Seismic frame per SBC 304 — ELF base shear and drift checks included.',
   },
 ]
 
@@ -114,7 +172,11 @@ export default function LandingWorkspace({ onNav, onAuth }) {
 
       {/* SECTION 1 - HERO */}
       <section className="landing-hero" aria-label="Imad overview">
-        <HoverReveal photoSrc="/images/hero.jpg" label="STRUCTURAL VIEW" />
+        <HoverReveal
+          photoSrc="/images/hero.jpg"
+          label="ANALYZED STRUCTURE · 13×16 M RC FRAME"
+          caption="Two-storey RC frame, 13 by 16 metres — 16 columns at 4×4 grid, 24 beams, analytic solver. Max utilization 86%, status: acceptable. Green = under 50% of capacity."
+        />
         <div className="landing-hero-content">
           <span className="landing-hero-pill fade-up fade-up-0">STRUCTURAL ENGINEERING + AI</span>
           <h1 className="fade-up fade-up-1">Autonomous structural engineering for the MENA region.</h1>
@@ -155,7 +217,7 @@ export default function LandingWorkspace({ onNav, onAuth }) {
           <div className="landing-stats">
             {STATS.map((s) => (
               <div className="landing-stat" key={s.label}>
-                <span className="stat-number">{s.value}</span>
+                <span className="stat-number" data-proof={s.proof || ''}>{s.value}</span>
                 <span className="eyebrow">{s.label}</span>
               </div>
             ))}
@@ -194,7 +256,7 @@ export default function LandingWorkspace({ onNav, onAuth }) {
           <div className="landing-projects-grid">
             {PROJECTS.map((p) => (
               <article className="landing-project" key={p.title}>
-                <HoverReveal photoSrc={p.img} label="STRUCTURAL VIEW" />
+                <HoverReveal photoSrc={p.img} label="ANALYZED STRUCTURE" caption={p.caption} />
                 <div className="landing-project-body">
                   <h3>{p.title}</h3>
                   <div className="landing-project-meta">{p.meta}</div>
@@ -212,9 +274,14 @@ export default function LandingWorkspace({ onNav, onAuth }) {
           <span className="eyebrow">Get started</span>
           <h2 id="landing-cta-h">Ready to design your next project?</h2>
           <p>Create a free account and run your first structural design in minutes.</p>
-          <button type="button" className="sp-btn sp-btn-blue-text" onClick={go(onNav, 'plan')}>
-            Start a Project
-          </button>
+          <div className="landing-hero-btns">
+            <button type="button" className="sp-btn sp-btn-blue-text" onClick={go(onNav, 'plan')}>
+              Start a Project
+            </button>
+            <button type="button" className="sp-btn sp-btn-outline-light" onClick={go(onNav, 'proof')}>
+              See the Proof
+            </button>
+          </div>
         </div>
       </section>
 

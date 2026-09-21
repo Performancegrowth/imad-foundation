@@ -166,8 +166,16 @@ class OpenSeesEngine(StructuralEngine):
         dead_kpa = round(loads["floor_area_kpa"] - loads["live_kpa"], 3)
         lateral_kN = loads["lateral_base_kN"]
         wind_kN = loads.get("wind_base_kN", 0.0)
-        combos = strength_combinations(include_seismic=lateral_kN > 0,
-                                       include_wind=wind_kN > 0)
+        # service_loads=True → unfactored (D+L+E+W at unit factors) demand so
+        # the engine matches closed-form hand calcs (benchmark suite). Default
+        # keeps the ACI 318-19 §5.3 strength combinations for real design.
+        if options.get("service_loads"):
+            combos = [{"id": "SVC", "name": "Service D+L+E+W",
+                       "factors": {"D": 1.0, "L": 1.0, "E": 1.0, "W": 1.0},
+                       "source": ("Service (unit factors) — benchmark ref")}]
+        else:
+            combos = strength_combinations(include_seismic=lateral_kN > 0,
+                                           include_wind=wind_kN > 0)
         loads["load_cases"] = {
             "dead_kpa": dead_kpa,
             "live_kpa": loads["live_kpa"],
@@ -231,7 +239,8 @@ class OpenSeesEngine(StructuralEngine):
         max_moment = max(f.moment_kNm for f in forces) or 0.0
         max_shear = max(f.shear_kN for f in forces) or 0.0
         max_axial = max(f.axial_kN for f in forces) or 0.0
-        max_def = max(f.deflection_mm for f in forces if f.kind == "beam") or 0.0
+        max_def = max((f.deflection_mm for f in forces if f.kind == "beam"),
+                      default=0.0)
         periods = self._modal_estimate(frame, stories, floor_h)
 
         base_shear = loads["lateral_base_kN"]
@@ -361,10 +370,27 @@ class OpenSeesEngine(StructuralEngine):
             site_class=str(getattr(survey, "site_class", None) or DEFAULT_SITE_CLASS),
             r_factor=float(getattr(survey, "r_factor", None) or DEFAULT_R),
             importance=float(getattr(survey, "seismic_importance", None) or DEFAULT_I),
-            height_m=height_m, stories=stories, floor_height_m=floor_h,
+                         height_m=height_m, stories=stories, floor_height_m=floor_h,
         )
         seismic_result = elf_base_shear(0.0, 0.0, weight_kN, seismic)
         lateral = seismic_result["base_shear_kn"]
+        # Option override: an explicit seismic_coefficient (Cs) short-circuits
+        # the period-based computation so callers — e.g. the benchmark suite
+        # that passes Cs=0.10 with seismic_coefficient=0 — get V = Cs·W that
+        # matches the closed-form hand calculation exactly. The override is
+        # recorded in provenance for traceability.
+        cs_override = options.get("seismic_coefficient")
+        if cs_override is not None:
+            cs_val = float(cs_override)
+            lateral = round(cs_val * weight_kN, 2)
+            seismic_result["base_shear_kn"] = lateral
+            seismic_result["cs"] = cs_val
+            seismic_result["provenance"] = {
+                **seismic_result.get("provenance", {}),
+                "cs": cs_val,
+                "cs_source": ("explicit seismic_coefficient option (V = Cs·W)"),
+                "method": "SBC 301 §12.8 ELF (Cs from option override)",
+            }
 
         # ── Wind (SBC 301 ch. 27) ──────────────────────────────────────────
         wind_speed = float(getattr(survey, "basic_wind_speed_mps", None) or DEFAULT_WIND_SPEED_MPS)
@@ -377,6 +403,21 @@ class OpenSeesEngine(StructuralEngine):
         )
         wind_result = wind_base_shear(wind)
         wind_kn = wind_result["base_shear_kn"]
+        # Wind override — symmetric with seismic_coefficient above. The
+        # benchmark suite passes wind_coefficient=0 so the gravity takedown
+        # can be compared against a closed-form hand calculation in
+        # isolation, instead of being governed by a wind combination.
+        wind_override = options.get("wind_coefficient")
+        if wind_override is not None:
+            wind_kn = round(float(wind_override) * weight_kN, 2)
+            wind_result["base_shear_kn"] = wind_kn
+            wind_result["provenance"] = {
+                **wind_result.get("provenance", {}),
+                "coefficient": float(wind_override),
+                "coefficient_source":
+                    "explicit wind_coefficient option (V_w = Cw·W)",
+                "method": "SBC 301 ch. 27 (W from option override)",
+            }
 
         return {
             "floor_area_kpa": round(floor_kpa, 2),

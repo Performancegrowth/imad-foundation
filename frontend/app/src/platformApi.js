@@ -67,9 +67,15 @@ export const getBoq = (designId) => get(`/generate-boq/${designId}`)
 // ─── Carbon ────────────────────────────────────────────────────────────────
 export const generateCarbonReport = (designId) => post('/carbon-report', { design_id: designId })
 
-// ─── Validation ────────────────────────────────────────────────────────────
+// ─── Validation ──────────────────────────────────────────────────────────
+// Benchmark suite ("Imad vs hand calculations"): POST runs it, GET fetches
+// the latest stored report. Used by the public Proof page and Governance.
 export const runValidation = () => post('/validation/run', {})
 export const getValidationReport = () => get('/validation/report')
+export const getValidationPdfUrl = () => '/api/v1/validation/report/pdf'
+// Public, unauthenticated mirror — used by the /proof page so anonymous
+// visitors see the benchmark numbers (no token required).
+export const getPublicValidationReport = () => get('/validation/public')
 
 
 // ─── Extended domains (re-exported) ────────────────────────────────────────

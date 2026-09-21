@@ -21,6 +21,12 @@ log = logging.getLogger("imad.api.validation")
 # AuthZ: benchmark reports back the certification posture of the deployment.
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
+# Public, read-only mirror for the marketing "Proof" page. The benchmark
+# numbers are the same suite the authed routes run — nothing sensitive is
+# exposed (no project data), so anonymous visitors may read the latest
+# published report. Writes stay behind auth on `router` above.
+public_router = APIRouter()
+
 KNOWN_CASES = ["beam_udl", "column_gravity", "frame_elf"]
 # Accept either the canonical engine ids above or the friendly aliases below.
 _CASE_ALIASES = {"beam": "beam_udl", "column": "column_gravity", "frame": "frame_elf"}
@@ -58,6 +64,25 @@ async def latest() -> Dict[str, Any]:
             detail="No validation run yet — POST /validation/run first.")
     latest_report = max(reports, key=lambda r: r.get("created_at", ""))
     return latest_report
+
+
+@public_router.get("/validation/public",
+                   summary="Latest benchmark report (public, no auth)")
+async def public_latest() -> Dict[str, Any]:
+    """Latest stored report, computed on first request if none exists yet.
+
+    Keeps the public Proof page populated without exposing any per-user or
+    per-project data — the suite is deterministic and input-free.
+    """
+    reports = collection("validation_reports").list()
+    if reports:
+        return max(reports, key=lambda r: r.get("created_at", ""))
+    try:
+        report = run_suite(None)
+    except ValidationError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    collection("validation_reports").put(report, prefix="val")
+    return report
 
 
 @router.get("/validation/report/pdf", summary="Download the latest accuracy report (PDF)")

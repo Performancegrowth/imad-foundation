@@ -30,8 +30,14 @@ TOLERANCE_PCT = 5.0          # pass band vs hand calculation
 WARNING_BAND_PCT = 10.0      # conservative-warning band
 
 # Reference values shared by hand calc AND engine so only solver accuracy is tested.
-E_GPA = 30.0                 # C30 short-term Ec ≈ 30 GPa (ACI 318 Table 19.2.2 approx)
-E_KPA = E_GPA * 1e6          # 1 GPa = 1e6 kPa
+import math
+E_FPRIME_MPA = 30.0            # C30 concrete (matches engine default, ACI 318-19)
+# ACI 318-19 §19.2.2.1: Ec = 4700·√f'c (MPa) for normal-weight concrete — the
+# same expression the analytic solver uses (_beam_rigidity), so deflection
+# isolates solver geometry/math error rather than an Ec round-numbering choice.
+E_CONCRETE_MPA = 4700.0 * math.sqrt(E_FPRIME_MPA)
+E_GPA = E_CONCRETE_MPA / 1000.0       # ≈ 25.74 GPa
+E_KPA = E_CONCRETE_MPA * 1000.0       # kPa  (MPa → kPa)
 GAMMA_CONCRETE = 25.0        # kN/m³ unit weight of RC
 
 
@@ -124,7 +130,14 @@ def _synthetic_frame_plan(stories: int = 2):
 
 
 # Options shared by every run: strip superimposed loads so hand == engine inputs.
-BENCH_OPTIONS = {"dead_extra_kpa": 0.0, "tiles_kpa": 0.0, "live_kpa": 0.0}
+# service_loads=True makes the engine report unfactored (unit-factor) service
+# demands so they match the closed-form hand calcs — the benchmark isolates
+# *solvers*, not load factors.
+# wind_coefficient=0 zeroes the wind head (symmetric with the per-case
+# seismic_coefficient override) so the gravity benchmarks are not governed by
+# a wind combination the hand calculation does not model.
+BENCH_OPTIONS = {"dead_extra_kpa": 0.0, "tiles_kpa": 0.0, "live_kpa": 0.0,
+                 "wind_coefficient": 0.0, "service_loads": True}
 
 CASES = ("beam_udl", "column_gravity", "frame_elf")
 

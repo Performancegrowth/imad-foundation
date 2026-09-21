@@ -31,6 +31,8 @@ api_router.include_router(billing.router, tags=["billing"])
 api_router.include_router(governance.router, tags=["governance"])
 # Sprint 11 — engineering validation
 api_router.include_router(validation.router, tags=["validation"])
+# Public read-only benchmark mirror for the marketing "Proof" page (no auth).
+api_router.include_router(validation.public_router, tags=["validation"])
 # Sprint 12 — BIM & collaboration
 api_router.include_router(collaboration.router, tags=["collaboration"])
 # Sprint 13 — data moat & marketplace
