@@ -81,6 +81,13 @@ coverage/
 docker-data/
 
 # ── Local diagnostic scratch (ad-hoc session probes) ──────────────
+# Root-level only; source lives under backend/ and frontend/, and package
+# files like __init__.py are never at the repo root, so these can be broad.
+/_*.py
+/_*.ps1
+/_*.log
+/_*.txt
+/_p_*.json
 /_b5*.txt
 /_diag*.txt
 /_dc*.txt
