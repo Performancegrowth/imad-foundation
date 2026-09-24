@@ -43,6 +43,29 @@
   font-family: var(--font-sans);
 }
 
+/* 3D viewer — hover tooltip + click inspector (Building3DWorkspace). */
+.viewer-wrap { position: relative; }
+.viewer-tip {
+  position: absolute; z-index: 5; pointer-events: none;
+  background: #06004a; color: #fff; font-size: 12px;
+  padding: 4px 10px; border-radius: 45px; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(6, 0, 74, 0.35);
+}
+.viewer-tip strong { color: var(--accent-lime, #cdf765); }
+.viewer-inspector {
+  position: absolute; top: 12px; right: 12px; z-index: 6;
+  width: 280px; max-height: calc(100% - 24px); overflow: auto;
+  background: var(--surface, #fff); color: var(--ink, #06004a);
+  border: 1px solid var(--line, #e6e3e3); border-radius: 16px;
+  padding: 12px 14px; box-shadow: 0 12px 32px rgba(6, 0, 74, 0.18);
+}
+.viewer-inspector-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.viewer-inspector-head strong { font-size: 15px; }
+.viewer-inspector-head .badge { margin-right: auto; }
+.viewer-inspector-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.viewer-inspector-table th { text-align: left; font-weight: 600; color: var(--muted, #636363); padding: 3px 8px 3px 0; white-space: nowrap; }
+.viewer-inspector-table td { text-align: right; padding: 3px 0; }
+
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; margin: 0; }

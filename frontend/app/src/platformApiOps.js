@@ -19,6 +19,9 @@ export const getAuditLog = (projectId) => get(`/audit-log/${projectId}`)
 // Builds a real 3D scene from the project's plan + analysis. The backend
 // resolves both server-side from project_id (see api/visualization.py).
 export const getVisualizationData = (projectId) => post('/viz/building/scene', { project_id: projectId })
+// Click-inspector: merged forces + design for one member (?element_id=B7).
+export const inspectMember = (projectId, elementId) =>
+  post(`/viz/building/inspect?element_id=${encodeURIComponent(elementId)}`, { project_id: projectId })
 
 // ─── Governance & review (Sprint 10) ───────────────────────────────────────
 // Compliance/package endpoints resolve plan+analysis server-side from the

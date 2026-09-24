@@ -1,12 +1,86 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { getVisualizationData } from '../platformApi.js'
+import { getVisualizationData, inspectMember } from '../platformApi.js'
 import { NoProject, useProjectId } from '../useProjectId.jsx'
 import { useProjectPlan } from '../useProjectPlan'
 import { Button, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
 import { LoadingCard, EmptyCard, NextStep } from '../components/ui.jsx'
+
+// Hover tooltip — follows the cursor, names the member + its utilization.
+function HoverTip({ tip }) {
+  if (!tip) return null
+  return (
+    <div className="viewer-tip" style={{ left: tip.x + 14, top: tip.y + 14 }}>
+      <strong>{tip.element_id}</strong>
+      <span> · {tip.kind}{tip.util != null ? ` · util ${(tip.util * 100).toFixed(0)}%` : ''}</span>
+    </div>
+  )
+}
+
+// Click inspector — merged forces + design for the selected member.
+function InspectorPanel({ projectId, selection, onClose }) {
+  const [detail, setDetail] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    if (!selection || !projectId) return
+    let alive = true
+    setLoading(true); setError(null); setDetail(null)
+    inspectMember(projectId, selection.element_id)
+      .then((d) => { if (alive) setDetail(d) })
+      .catch((e) => { if (alive) setError(e.message || 'Inspector failed.') })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [selection, projectId])
+  if (!selection) return null
+  const d = detail || {}
+  const des = d.design || {}
+  const rows = selection.kind === 'column'
+    ? [
+        ['Axial', d.axial_kN != null ? `${d.axial_kN} kN` : '—'],
+        ['Capacity φPn', des.phi_pn_kN != null ? `${des.phi_pn_kN} kN` : '—'],
+        ['Section', des.section_mm != null ? `${des.section_mm}×${des.section_mm} mm` : '—'],
+        ['Rebar', des.arrangement || '—'],
+        ['Ties', des.ties || '—'],
+      ]
+    : selection.kind === 'beam'
+      ? [
+          ['Moment', d.moment_kNm != null ? `${d.moment_kNm} kN·m` : '—'],
+          ['Shear', d.shear_kN != null ? `${d.shear_kN} kN` : '—'],
+          ['Capacity φMn', des.phi_mn_kNm != null ? `${des.phi_mn_kNm} kN·m` : '—'],
+          ['Section', des.width_mm != null ? `${des.width_mm}×${des.depth_mm} mm` : '—'],
+          ['Rebar', des.arrangement || '—'],
+          ['Stirrups', des.stirrups || '—'],
+          ['Deflection', d.deflection_mm != null ? `${d.deflection_mm} mm` : '—'],
+        ]
+      : [['Type', 'Non-structural wall']]
+  return (
+    <div className="viewer-inspector" role="dialog" aria-label={`Member ${selection.element_id}`}>
+      <div className="viewer-inspector-head">
+        <strong>{selection.element_id}</strong>
+        <Badge variant={d.utilization > 1 ? 'fail' : d.utilization > 0.85 ? 'warn' : 'success'}>
+          {d.utilization != null ? `util ${(d.utilization * 100).toFixed(0)}%` : selection.kind}
+        </Badge>
+        <Button size="sm" variant="outline" onClick={onClose} aria-label="Close inspector">✕</Button>
+      </div>
+      {loading && <p className="muted small">Loading member data...</p>}
+      {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
+      {d && !d.analysis_present && !loading && (
+        <p className="muted small">No analysis for this project yet — run Analyze to see forces.</p>
+      )}
+      <table className="viewer-inspector-table">
+        <tbody>
+          {rows.map(([k, v]) => (
+            <tr key={k}><th>{k}</th><td className="mono">{v}</td></tr>
+          ))}
+          {d.load_combo && <tr><th>Governing combo</th><td className="mono">{d.load_combo}</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 // Real building 3D viewer (roadmap #31).
 // Two modes:
@@ -23,6 +97,8 @@ export default function Building3DWorkspace() {
   const [error, setError] = useState(null)
   const [mode, setMode] = useState('engineer')   // engineer | customer
   const [floor, setFloor] = useState('all')
+  const [selection, setSelection] = useState(null)  // {element_id, kind}
+  const [tip, setTip] = useState(null)              // hover tooltip
   const projectId = useProjectId()
   const { plan, loading: planLoading } = useProjectPlan()
 
@@ -96,11 +172,43 @@ export default function Building3DWorkspace() {
         mesh.position.set(node.x, node.y, node.z)
         mesh.rotation.z = node.rotation_z || 0
       }
-      mesh.userData = { kind: node.type, utilization: node.utilization || 0, floor: node.floor || 0 }
+      mesh.userData = { element_id: node.element_id, kind: node.kind || node.type, util: node.utilization || 0, floor: node.level ?? 0 }
       group.add(mesh); meshes.push(mesh)
     }
     scene3d.add(group)
     storeRef.current = { group, meshes }
+
+    // Click + hover picking (inspector): meshes carry userData
+    // {element_id, kind, util, floor}. Raycast on pointer events.
+    const raycaster = new THREE.Raycaster()
+    const pointer = new THREE.Vector2()
+    const pickMember = (ev) => {
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1
+      pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1
+      raycaster.setFromCamera(pointer, camera)
+      const hits = raycaster.intersectObjects(meshes.filter((m) => m.visible))
+      const obj = hits.length ? hits[0].object : null
+      return obj ? { ud: obj.userData, x: ev.clientX - rect.left, y: ev.clientY - rect.top } : null
+    }
+    const onHover = (ev) => {
+      const hit = pickMember(ev)
+      if (hit && hit.ud.element_id) {
+        setTip({ element_id: hit.ud.element_id, kind: hit.ud.kind, util: hit.ud.util, x: hit.x, y: hit.y })
+        renderer.domElement.style.cursor = 'pointer'
+      } else {
+        setTip(null)
+        renderer.domElement.style.cursor = ''
+      }
+    }
+    const onPick = (ev) => {
+      const hit = pickMember(ev)
+      if (hit && hit.ud.element_id) {
+        setSelection({ element_id: hit.ud.element_id, kind: hit.ud.kind })
+      }
+    }
+    renderer.domElement.addEventListener('pointermove', onHover)
+    renderer.domElement.addEventListener('click', onPick)
 
     const raf = requestAnimationFrame(function loop() {
       controls.update(); renderer.render(scene3d, camera); requestAnimationFrame(loop)
@@ -112,6 +220,8 @@ export default function Building3DWorkspace() {
     window.addEventListener('resize', onResize)
     return () => {
       cancelAnimationFrame(raf); window.removeEventListener('resize', onResize)
+      renderer.domElement.removeEventListener('pointermove', onHover)
+      renderer.domElement.removeEventListener('click', onPick)
       controls.dispose(); renderer.dispose()
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
     }
@@ -158,7 +268,7 @@ export default function Building3DWorkspace() {
     )
   }
 
-  const floorBtns = ['all', ...Array.from({ length: stories }, (_, i) => String(i))]
+  const floorBtns = ['all', ...Array.from({ length: stories }, (_, i) => String(i))];
 
   return (
     <div className="workspace-grid">
@@ -167,10 +277,11 @@ export default function Building3DWorkspace() {
         <CardHeader>
           <CardTitle>3D Building View</CardTitle>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Badge variant="default">{stories} storey{stories > 1 ? 'ies' : 'y'} ( {nodes.length} elements</Badge>
+            <Badge variant="default">{stories} storey{stories > 1 ? 'ies' : 'y'} · {nodes.length} elements</Badge>
             {plan && <Badge variant="success">{plan.label || plan.name}</Badge>}
           </div>
         </CardHeader>
+
         <p className="muted subtitle">
           Visualize the full building model. Check geometry before submission.
         </p>
@@ -195,8 +306,12 @@ export default function Building3DWorkspace() {
         </div>
         {loading && <p className="muted">Loading building model...</p>}
         {error && <div className="alert error" role="alert"><strong>Error:</strong> {error}</div>}
-        <div ref={mountRef} className="viewer-3d" style={{ height: 480 }}
-             role="img" aria-label={`Interactive 3D building, ${stories} storeys`} />
+        <div className="viewer-wrap" style={{ position: 'relative' }}>
+          <div ref={mountRef} className="viewer-3d" style={{ height: 480 }}
+               role="img" aria-label={`Interactive 3D building, ${stories} storeys`} />
+          <HoverTip tip={tip} />
+          <InspectorPanel projectId={projectId} selection={selection} onClose={() => setSelection(null)} />
+        </div>
         {mode === 'engineer' && analysisPresent && (
           <p className="muted small">Utilisation heat-map: green &rarr; lime &rarr; yellow &rarr; orange &rarr; red.</p>
         )}
@@ -204,6 +319,7 @@ export default function Building3DWorkspace() {
           <p className="muted small">Run analysis to see utilisation colours.</p>
         )}
       </Card>
+
 
       <NextStep nextLabel="Review &amp; Sign" nextHref={`/project/${projectId}/review`} />
     </div>

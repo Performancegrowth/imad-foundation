@@ -68,6 +68,44 @@ def _latest_analysis(project_id: int) -> Dict[str, Any]:
     return {}
 
 
+def _member_detail(element_id: str, kind: str, level: int,
+                   analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge member forces + design into one inspector record.
+
+    Forces come from ``member_forces`` (keyed by ``element_id``); capacity,
+    reinforcement and utilization come from ``design.beams`` /
+    ``design.columns`` (keyed by ``element``). Missing analysis yields zeros
+    with ``analysis_present: False`` so the frontend stays honest.
+    """
+    forces = {}
+    for m in analysis.get("member_forces", []) or []:
+        if isinstance(m, dict) and m.get("element_id") == element_id:
+            forces = m
+            break
+    design_entry = {}
+    group = "beams" if kind == "beam" else "columns" if kind == "column" else None
+    design = analysis.get("design") or {}
+    if group:
+        for entry in design.get(group, []) or []:
+            if isinstance(entry, dict) and entry.get("element") == element_id:
+                design_entry = entry
+                break
+    present = bool(forces or design_entry)
+    detail: Dict[str, Any] = {
+        "element_id": element_id, "kind": kind, "level": level,
+        "analysis_present": present,
+        "moment_kNm": forces.get("moment_kNm", 0.0),
+        "shear_kN": forces.get("shear_kN", 0.0),
+        "axial_kN": forces.get("axial_kN", 0.0),
+        "deflection_mm": forces.get("deflection_mm", 0.0),
+        "load_combo": forces.get("load_combo", ""),
+        "utilization": design_entry.get("utilization",
+                                        forces.get("utilization", 0.0)),
+        "design": design_entry,
+    }
+    return detail
+
+
 @router.post("/building/scene", summary="Generate 3D building scene from plan + analysis")
 async def building_scene(payload: BuildingSceneRequest) -> Dict[str, Any]:
     """Build a Three.js scene JSON from structural geometry + analysis."""
@@ -84,15 +122,61 @@ async def building_scene(payload: BuildingSceneRequest) -> Dict[str, Any]:
                 plan = PlanGenerator.load_plan(payload.project_id, name)
             except PlanGenerationError:
                 plan = None
-
     if not plan:
         raise HTTPException(status_code=404, detail="No plan found for this project.")
-
     analysis = payload.analysis or _latest_analysis(payload.project_id)
     scene = _build_three_js_scene(plan, analysis or {})
     rid = result_id("scene")
     save_result(rid, {"project_id": payload.project_id, "kind": "3d_scene", "scene": scene})
     return {"result_id": rid, "scene": scene}
+
+
+@router.post("/building/inspect", summary="Inspector record for one member")
+async def inspect_member(payload: BuildingSceneRequest,
+                         element_id: str = "") -> Dict[str, Any]:
+    """Merged forces + design for a single member (3D click inspector).
+
+    ``element_id`` arrives as a query parameter (``?element_id=B7``); the plan
+    is resolved exactly like the scene endpoint so ids always line up.
+    """
+    plan = None
+    if payload.plan:
+        try:
+            plan = PlanData(**payload.plan)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid plan: {exc}") from exc
+    else:
+        name = payload.plan_name or _latest_plan_name(payload.project_id)
+        if name:
+            try:
+                plan = PlanGenerator.load_plan(payload.project_id, name)
+            except PlanGenerationError:
+                plan = None
+    if not plan:
+        raise HTTPException(status_code=404, detail="No plan found for this project.")
+    if not element_id:
+        raise HTTPException(status_code=422, detail="Provide '?element_id=<id>'.")
+    kind, level = "beam", 0
+    for col in plan.columns:
+        if col.id == element_id:
+            kind, level = "column", 0
+            break
+    else:
+        for beam in plan.beams:
+            if beam.id == element_id:
+                kind, level = "beam", beam.level
+                break
+        else:
+            for wall in plan.walls:
+                if wall.id == element_id:
+                    kind, level = "wall", wall.level
+                    break
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Member '{element_id}' not in this plan.")
+    analysis = payload.analysis or _latest_analysis(payload.project_id)
+    return _member_detail(element_id, kind, level, analysis or {})
 
 
 @router.post("/building/gltf", summary="Export 3D scene as glTF file")
@@ -135,7 +219,8 @@ def _build_three_js_scene(plan: PlanData, analysis: Dict[str, Any]) -> Dict[str,
 
     for col in plan.columns:
         util = _utilization(col.id)
-        nodes.append({"id": f"col-{col.id}", "type": "cylinder",
+        nodes.append({"id": f"col-{col.id}", "element_id": col.id, "kind": "column",
+                      "type": "cylinder", "level": 0,
                       "x": col.cx, "y": col.height / 2, "z": col.cy,
                       "radius": col.size_m / 2, "height": col.height,
                       "color": _utilization_color(util), "utilization": round(util, 2)})
@@ -146,7 +231,8 @@ def _build_three_js_scene(plan: PlanData, analysis: Dict[str, Any]) -> Dict[str,
         cx, cy = (beam.x1 + beam.x2) / 2, (beam.y1 + beam.y2) / 2
         y = (beam.level + 1) * floor_height
         util = _utilization(beam.id)
-        nodes.append({"id": f"beam-{beam.id}", "type": "box",
+        nodes.append({"id": f"beam-{beam.id}", "element_id": beam.id, "kind": "beam",
+                      "type": "box", "level": beam.level,
                       "x": cx, "y": y, "z": cy,
                       "length": length, "width": beam.depth_m, "height": beam.width_m,
                       "rotation_z": angle,
@@ -158,7 +244,8 @@ def _build_three_js_scene(plan: PlanData, analysis: Dict[str, Any]) -> Dict[str,
         cx, cy = (wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2
         h = wall.height_m or floor_height
         y = (wall.level + 1) * floor_height - h / 2
-        nodes.append({"id": f"wall-{wall.id}", "type": "box",
+        nodes.append({"id": f"wall-{wall.id}", "element_id": wall.id, "kind": "wall",
+                      "type": "box", "level": wall.level,
                       "x": cx, "y": y, "z": cy,
                       "length": length, "width": h, "height": wall.thickness_m,
                       "rotation_z": angle, "color": "#888888"})
