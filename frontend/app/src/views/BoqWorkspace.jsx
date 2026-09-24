@@ -119,7 +119,7 @@ export default function BoqWorkspace() {
             <div className="summary-grid four">
               <StatCard label="Total estimate" value={money(boq.totals.amount_usd)} />
               <StatCard label="Cost / m² GFA" value={money(boq.totals.amount_per_m2)} tone="gold" />
-              <StatCard label="Rebar" value={Number(boq.bbs.rebar_total_kg).toLocaleString()} unit="kg" />
+              <StatCard label="Rebar" value={Number(boq.totals.rebar_kg).toLocaleString()} unit="kg" />
               <StatCard label="Cutting waste"
                         value={`${boq.bbs.waste_percent}%`}
                         tone={boq.bbs.within_target ? 'ok' : 'warn'} />

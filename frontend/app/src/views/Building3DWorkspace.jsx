@@ -277,7 +277,7 @@ export default function Building3DWorkspace() {
         <CardHeader>
           <CardTitle>3D Building View</CardTitle>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Badge variant="default">{stories} storey{stories > 1 ? 'ies' : 'y'} · {nodes.length} elements</Badge>
+            <Badge variant="default">{stories} storey{stories > 1 ? 's' : ''} · {nodes.length} elements</Badge>
             {plan && <Badge variant="success">{plan.label || plan.name}</Badge>}
           </div>
         </CardHeader>

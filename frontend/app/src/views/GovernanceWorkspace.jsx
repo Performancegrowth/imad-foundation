@@ -38,9 +38,16 @@ export default function GovernanceWorkspace() {
   useEffect(() => { load() }, [load])
 
   const check = async () => {
+    const planName = plan?.name || plan?.label
+    if (!planName) { setErr('No saved plan yet — create a plan first, then run the check.'); return }
     setBusy(true); setErr(null)
-    try { setReport(await getComplianceReport({ project_id: projectId })) } catch (e) { setErr(e.message) } finally { setBusy(false) }
+    try { setReport(await getComplianceReport({ project_id: projectId, plan_name: planName })) } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
+  // Auto-run the compliance check once the saved plan resolves (mirrors Analyze).
+  useEffect(() => {
+    if (plan && report === null) check()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan])
   const gen = async () => {
     setBusy(true); setErr(null)
     try { await generateSBC304Package({ project_id: projectId }); load() } catch (e) { setErr(e.message) } finally { setBusy(false) }
@@ -191,7 +198,7 @@ export default function GovernanceWorkspace() {
               <TableHeader><TableRow><TableHead>Action</TableHead><TableHead>User</TableHead><TableHead>Timestamp</TableHead></TableRow></TableHeader>
               <TableBody>{audit.slice(-30).reverse().map((a, i) => (
                 <TableRow key={a.id ?? i}>
-                  <TableCell>{a.action ?? a.event}</TableCell><TableCell>{a.user_id ?? a.user}</TableCell>
+                  <TableCell>{a.action ?? a.event}</TableCell><TableCell>{a.user_email || a.details?.user_email || a.user_id || a.user || a.actor_id || 'system'}</TableCell>
                   <TableCell className="small">{(a.timestamp ?? a.created_at ?? '').replace('T', ' ').slice(0, 19)}</TableCell>
                 </TableRow>
               ))}</TableBody>

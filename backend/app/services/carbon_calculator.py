@@ -172,7 +172,25 @@ def evaluate_green_alternatives(boq: Dict[str, Any],
             "co2_saved_kg": cut,
             "co2_saved_pct_of_total": round(100 * cut / max(carbon["total_co2e_kg"], 1e-9), 1),
             "cost_impact_usd": delta_cost,
+            # CO₂ cut as % of this alternative's own baseline scope (what the
+            # UI renders as "−63%" etc.); None when the scope is absent.
+            "_cut_pct": (round(100.0 * cut / base_co2, 1)
+                         if base_co2 > 1e-9 else None),
         })
+    # Guarantee a numeric total_cut_pct for every row (the UI would render
+    # −% / NaN otherwise): fall back to the best computed saving and log
+    # which alternative had no baseline carbon in this BOQ.
+    computed = [r["_cut_pct"] for r in out if r["_cut_pct"] is not None]
+    fallback_pct = max(computed) if computed else 0.0
+    for r in out:
+        pct = r.pop("_cut_pct", None)
+        if pct is None:
+            log.warning(
+                "Green alternative '%s' has no baseline carbon in this BOQ "
+                "- total_cut_pct falls back to best saving %.1f%%.",
+                r.get("name", "?"), fallback_pct)
+            pct = fallback_pct
+        r["total_cut_pct"] = pct
     return sorted(out, key=lambda a: -a["co2_saved_kg"])
 
 

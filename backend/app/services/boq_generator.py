@@ -165,7 +165,7 @@ def generate_bbs(plan: PlanData,
     from the designed cages (Ø / count per element) instead of the legacy
     Ø16/Ø18 assumptions; stirrup and tie spacing follow the design's
     detailing when present. Fallbacks preserve the legacy detailing:
-    beams 2 top + 2 bottom + Ø8 stirrups @150 mm; columns 4 verticals with
+    beams 2 top + 2 bottom + Ø8 stirrups @200 mm; columns 4 verticals with
     Ø8 ties @200 mm; slabs Ø10@200 mesh; footings Ø12@200 mat. Lengths
     include anchorage/laps (50d) and 25 mm cover.
     """
@@ -202,11 +202,11 @@ def generate_bbs(plan: PlanData,
         d_main = int(d_entry.get("bar_diameter_mm") or 16)
         n_main = max(2, int(d_entry.get("bars") or 2))
         eff = span - 0.05 + 2 * 50 * d_main / 1000     # clear + anchorages (50d)
-        stirrup_s = float(d_entry.get("stirrup_spacing_mm") or 150.0)
+        stirrup_s = float(d_entry.get("stirrup_spacing_mm") or 200.0)
         for _ in range(max(1, plan.stories)):
             add(f"Beam {beam.id}", "straight", d_main, eff, n_main)
             add(f"Beam {beam.id}", "straight", d_main, eff + 0.06, 2)
-            n_stirrups = max(2, math.ceil(span / max(stirrup_s, 50.0) / 1000.0))
+            n_stirrups = max(2, math.ceil(span * 1000.0 / max(stirrup_s, 50.0)) + 1)
             perimeter = 2 * (beam.width_m - 0.05 + beam.depth_m - 0.05) + 0.15
             add(f"Beam {beam.id}", "stirrup", 8, perimeter, n_stirrups,
                 f"Ø8@{stirrup_s:.0f}")
@@ -219,7 +219,7 @@ def generate_bbs(plan: PlanData,
         lap = 50 * d_main / 1000
         length = col.height * max(1, plan.stories) + lap
         add(f"Col {col.id}", "straight", d_main, length, n_main)
-        n_ties = (max(2, math.ceil(col.height / max(tie_s, 50.0) / 1000.0))
+        n_ties = (max(2, math.ceil(col.height * 1000.0 / max(tie_s, 50.0)) + 1)
                   * max(1, plan.stories))
         tie_len = 4 * (col.size_m - 0.05) + 0.12
         add(f"Col {col.id}", "tie", 8, tie_len, n_ties, f"Ø8@{tie_s:.0f}")

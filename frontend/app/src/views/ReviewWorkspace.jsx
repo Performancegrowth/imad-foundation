@@ -17,7 +17,7 @@ const STATE = {
 export default function ReviewWorkspace() {
     const projectId = useProjectId()
   const { plan, loading: planLoading } = useProjectPlan()
-  const [designId, setDesignId] = useState('res_demo')
+  const [designId, setDesignId] = useState('')
   const [checks, setChecks] = useState(null)
   const [audit, setAudit] = useState([])
   const [sig, setSig] = useState(null)
@@ -31,13 +31,27 @@ export default function ReviewWorkspace() {
   }, [projectId])
   useEffect(() => { loadAudit() }, [loadAudit])
 
+  // The design identifier derives from the saved plan (id/name) — never a
+  // hardcoded placeholder.
+  useEffect(() => {
+    if (designId || !plan) return
+    setDesignId(plan.design_id || plan.id || plan.name || plan.label || '')
+  }, [plan, designId])
+
   const run = async () => {
+    const planName = plan?.name || plan?.label
+    if (!planName) { setError('No saved plan yet — create a plan first, then run the checklist.'); return }
     setBusy(true); setError(null)
-    try { setChecks(await runComplianceCheck({ project_id: projectId })) } catch (e) { setError(e.message) } finally { setBusy(false) }
+    try { setChecks(await runComplianceCheck({ project_id: projectId, plan_name: planName })) } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
+  // Auto-run the checklist once the saved plan resolves (mirrors Analyze).
+  useEffect(() => {
+    if (plan && checks === null) run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan])
   const sign = async () => {
     setBusy(true); setError(null)
-    try { setSig(await requestSignature({ design_id: designId, project_id: projectId, engineer_name: 'Demo Engineer', license_number: 'SCE-1001' })); loadAudit() }
+    try { setSig(await requestSignature({ design_id: designId || plan?.name || plan?.label || 'current', project_id: projectId, engineer_name: 'Demo Engineer', license_number: 'SCE-1001' })); loadAudit() }
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
@@ -60,7 +74,7 @@ export default function ReviewWorkspace() {
         <p className="muted small">SBC 304 checklist, engineer signature and audit trail for project #{projectId}.</p>
         <div className="inline-controls">
           <label htmlFor="rd-design" className="sr-only">Design ID</label>
-          <Input id="rd-design" value={designId} onChange={(e) => setDesignId(e.target.value)} aria-label="Design ID" />
+          <Input id="rd-design" value={designId} onChange={(e) => setDesignId(e.target.value)} placeholder="—" aria-label="Design ID" />
           <Button variant="primary" onClick={run} disabled={busy}>{busy ? 'Checking…' : 'Run Compliance Checklist'}</Button>
         </div>
         {error && <ErrorState message={error} onRetry={run} />}
@@ -117,7 +131,7 @@ export default function ReviewWorkspace() {
                 <TableHeader><TableRow><TableHead>Action</TableHead><TableHead>User</TableHead><TableHead>When</TableHead></TableRow></TableHeader>
                 <TableBody>{audit.slice(-25).reverse().map((a, i) => (
                   <TableRow key={a.id ?? i}>
-                    <TableCell>{a.action ?? a.event ?? '—'}</TableCell><TableCell>{a.user_id ?? a.user ?? '—'}</TableCell>
+                    <TableCell>{a.action ?? a.event ?? '—'}</TableCell><TableCell>{a.user_email || a.details?.user_email || a.user_id || a.user || a.actor_id || '—'}</TableCell>
                     <TableCell className="small">{(a.timestamp ?? a.created_at ?? '').replace('T', ' ').slice(0, 19)}</TableCell>
                   </TableRow>
                 ))}</TableBody>

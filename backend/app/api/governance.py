@@ -76,9 +76,11 @@ async def compliance_check(payload: ComplianceRequest, user: TokenPayload = Depe
     record = _checks.put({
         "project_id": payload.project_id, "report": report,
     }, prefix="chk")
-    audit.log_action("compliance_check", project_id=payload.project_id,
+    audit.log_action("compliance_check", actor_id=user.uid,
+                     project_id=payload.project_id,
                      details={"check_id": record["id"],
-                              "passed": report.get("summary", {}).get("passed")})
+                              "passed": report.get("summary", {}).get("passed"),
+                              "user_email": user.sub})
     return {"check_id": record["id"], **report}
 
 
@@ -196,8 +198,10 @@ async def sbc304_package(payload: SBCPackageRequest, user: TokenPayload = Depend
         "analysis_result_id": payload.analysis_result_id,
         "signed_by": None,
     }, prefix="sub")
-    audit.log_action("sbc304_package_generated", project_id=payload.project_id,
-                     details={"package_id": record["id"], "path": path})
+    audit.log_action("sbc304_package_generated", actor_id=user.uid,
+                     project_id=payload.project_id,
+                     details={"package_id": record["id"], "path": path,
+                              "user_email": user.sub})
     return record
 
 
@@ -314,9 +318,11 @@ async def submission_docx_export(
         engineer_name=overrides.engineer_name or record.get("signed_by"),
     )
     _submissions.update(submission_id, docx_path=str(path))
-    audit.log_action("submission_docx_exported", project_id=project_id,
+    audit.log_action("submission_docx_exported", actor_id=user.uid,
+                     project_id=project_id,
                      details={"submission_id": submission_id,
-                              "path": str(path)})
+                              "path": str(path),
+                              "user_email": user.sub})
     return {"submission_id": submission_id, "file": str(path),
             "filename": Path(path).name}
 
@@ -420,8 +426,9 @@ async def sbc304_readiness(project_id: int, user: TokenPayload = Depends(require
     ]
 
     ready = all(item["ready"] for item in checklist)
-    audit.log_action("sbc304_readiness_viewed", project_id=project_id,
-                     details={"ready": ready})
+    audit.log_action("sbc304_readiness_viewed", actor_id=user.uid,
+                     project_id=project_id,
+                     details={"ready": ready, "user_email": user.sub})
     return {
         "project_id": project_id,
         "ready": ready,
@@ -446,10 +453,12 @@ async def signature_request(payload: SignatureRequestBody, user: TokenPayload = 
         "pdf_path": stamped,
         "signed_at": None,
     }, prefix="sig")
-    audit.log_action("signature_requested", actor_role=payload.actor_role,
+    audit.log_action("signature_requested", actor_id=user.uid,
+                     actor_role=payload.actor_role,
                      project_id=payload.project_id,
                      details={"signature_id": record["id"],
-                              "engineer": payload.engineer_name})
+                              "engineer": payload.engineer_name,
+                              "user_email": user.sub})
     return record
 
 
@@ -472,8 +481,10 @@ async def signature_complete(signature_id: str, body: SignatureCompleteBody,
         signature_id, status=body.outcome,
         signed_at=now_iso() if body.outcome == "signed" else None,
         notes=body.notes)
-    audit.log_action("signature_completed", details={
-        "signature_id": signature_id, "outcome": body.outcome})
+    audit.log_action("signature_completed", actor_id=user.uid,
+                     details={"signature_id": signature_id,
+                              "outcome": body.outcome,
+                              "user_email": user.sub})
     return updated
 
 
@@ -526,11 +537,12 @@ async def submission_transition(
     tracking = list(doc.get("tracking") or []) + [event]
     updated = _submissions.update(
         submission_id, status=body.status, tracking=tracking)
-    audit.log_action("submission_status_changed",
+    audit.log_action("submission_status_changed", actor_id=user.uid,
                      project_id=doc.get("project_id"),
                      details={"submission_id": submission_id,
                               "status": body.status,
-                              "reference_number": body.reference_number})
+                              "reference_number": body.reference_number,
+                              "user_email": user.sub})
     # First live consumer of the webhook fan-out (was dead infrastructure):
     # notify any registered plugins/endpoints of the lifecycle event.
     try:
@@ -610,8 +622,10 @@ async def submission_generate(payload: ComplianceRequest,
         "signed_by": signed_by,
         "compliance_check_id": None,
     }, prefix="sub")
-    audit.log_action("submission_generated", project_id=payload.project_id,
-                     details={"package_id": record["id"], "path": str(path)})
+    audit.log_action("submission_generated", actor_id=user.uid,
+                     project_id=payload.project_id,
+                     details={"package_id": record["id"], "path": str(path),
+                              "user_email": user.sub})
     return record
 
 

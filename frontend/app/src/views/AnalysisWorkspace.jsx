@@ -255,12 +255,13 @@ export default function AnalysisWorkspace() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Preliminary BOQ</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Rough estimate</CardTitle></CardHeader>
             <div className="summary-grid">
               <div className="stat"><span className="stat-label">Concrete</span><strong>{fmt(result.boq?.concrete_m3, 'm³')}</strong></div>
               <div className="stat"><span className="stat-label">Rebar</span><strong>{fmt(result.boq?.rebar_tonnes, 't')}</strong></div>
               <div className="stat"><span className="stat-label">Footprint</span><strong>{fmt(result.boq?.footprint_m2, 'm²')}</strong></div>
             </div>
+            <p className="muted small">Rule-of-thumb estimate from the analysis only — final quantities come from the full BOQ (BOQ page → Generate BOQ) and may differ.</p>
           </Card>
         </>
       )}
