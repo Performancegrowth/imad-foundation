@@ -66,6 +66,29 @@
 .viewer-inspector-table th { text-align: left; font-weight: 600; color: var(--muted, #636363); padding: 3px 8px 3px 0; white-space: nowrap; }
 .viewer-inspector-table td { text-align: right; padding: 3px 0; }
 
+/* ─── Evidence-based plan generation (CreatePlanWorkspace) ─────────────── */
+.ev-list { list-style: none; margin: 8px 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ev-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px;
+  border: 1px solid var(--line, #e6e3e3); border-radius: 10px; background: var(--surface, #fff); }
+.ev-label { font-weight: 600; min-width: 150px; color: var(--ink, #06004a); font-size: 13px; }
+.ev-value-wrap { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
+.ev-value { color: var(--ink, #06004a); font-size: 13px; }
+.ev-edit { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
+.ev-edit input, .ev-edit select { max-width: 240px; }
+.ev-chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; }
+.gen-steps { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.gen-steps li { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1px solid var(--line, #e6e3e3); border-radius: 10px; font-size: 13px; background: var(--surface, #fff); }
+.gen-steps li.pending { opacity: 0.55; }
+.gen-steps li.active { border-color: var(--primary, #3e68ff); box-shadow: 0 0 0 3px rgba(62, 104, 255, 0.12); }
+.gen-steps li.done { border-color: #0A5C36; }
+.gen-mark { font-weight: 700; width: 18px; text-align: center; }
+.gen-steps li.done .gen-mark { color: #0A5C36; }
+.review-list { list-style: none; margin: 6px 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.review-list li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 7px 10px;
+  border-radius: 8px; background: rgba(6, 0, 74, 0.03); flex-wrap: wrap; }
+.review-list .detail { color: var(--muted, #636363); font-size: 12px; }
+
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; margin: 0; }
