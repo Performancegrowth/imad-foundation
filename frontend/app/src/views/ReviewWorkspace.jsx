@@ -5,7 +5,7 @@ import { useProjectPlan } from '../useProjectPlan'
 import { EmptyState, ErrorState, Spinner } from '../components/ui.jsx'
 import { WorkflowStepper } from '../components/WorkflowStepper.jsx'
 import { LoadingCard, EmptyCard, NextStep } from '../components/ui.jsx'
-import { Button, Input, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
+import { Button, Input, Label, Card, CardHeader, CardTitle, Badge } from '../components/shadcn.jsx'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/shadcn.jsx'
 
 const STATE = {
@@ -24,6 +24,8 @@ export default function ReviewWorkspace() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [engineerName, setEngineerName] = useState('')
+  const [licenseNumber, setLicenseNumber] = useState('')
 
   const loadAudit = useCallback(() => {
     setLoading(true)
@@ -50,8 +52,12 @@ export default function ReviewWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan])
   const sign = async () => {
+    if (!engineerName.trim() || !licenseNumber.trim()) {
+      setError('Enter your name and license number (e.g. Eng. Layla Hassan, SCE-20451) before requesting the signature. The demo values are gone for good.')
+      return
+    }
     setBusy(true); setError(null)
-    try { setSig(await requestSignature({ design_id: designId || plan?.name || plan?.label || 'current', project_id: projectId, engineer_name: 'Demo Engineer', license_number: 'SCE-1001' })); loadAudit() }
+    try { setSig(await requestSignature({ design_id: designId || plan?.name || plan?.label || 'current', project_id: projectId, engineer_name: engineerName.trim(), license_number: licenseNumber.trim() })); loadAudit() }
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
@@ -112,7 +118,17 @@ export default function ReviewWorkspace() {
 
       <Card>
         <CardTitle>Signature Request</CardTitle>
-        <p className="muted small">Only licensed engineers may approve &amp; sign. Routed to the e-seal provider (placeholder).</p>
+        <p className="muted small">Only licensed engineers may approve &amp; sign. Your name and license number are stamped on the sealed review document.</p>
+        <div className="field">
+          <Label htmlFor="sig-name">Engineer name</Label>
+          <Input id="sig-name" type="text" autoComplete="name" placeholder="Eng. Layla Hassan"
+            value={engineerName} onChange={(e) => setEngineerName(e.target.value)} />
+        </div>
+        <div className="field">
+          <Label htmlFor="sig-license">License number</Label>
+          <Input id="sig-license" type="text" placeholder="SCE-20451"
+            value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
+        </div>
         <Button variant="primary" onClick={sign} disabled={busy}>{busy ? 'Requesting…' : 'Request Engineer Review &amp; Signature'}</Button>
         {sig && (
           <div className={`alert ${sig.status === 'rejected' ? 'error' : 'info'}`} role="status">

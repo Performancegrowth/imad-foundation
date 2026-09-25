@@ -78,3 +78,4 @@ alembic>=1.13        # SQLAlchemy schema migrations (upgrade head on boot)
 pytest>=8.0
 httpx>=0.27
 pint>=0.24         # unit-safe engineering conversions (core/units.py)
+pytest-timeout>=2.4.0   # kill any test over 60s (CI gate)

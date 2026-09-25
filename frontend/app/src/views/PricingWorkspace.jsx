@@ -23,7 +23,7 @@ export default function PricingWorkspace() {
       const res = await pApi.upgradeSubscription({ plan: planId, cycle: annual ? 'annual' : 'monthly' })
       setNotice(res?.checkout_url
         ? 'Redirecting to Stripe checkout…'
-        : 'Plan recorded (Stripe sandbox placeholder — no payment taken). Refresh later to see entitlements.')
+        : 'Plan recorded. To complete purchase, contact sales@imad.example.com — live checkout opens after Stripe is connected.')
       setCurrent(await pApi.currentSubscription())
     } catch (err) {
       setError(err.message || 'Upgrade failed.')
@@ -74,8 +74,10 @@ export default function PricingWorkspace() {
 
       <Card className="span-2" aria-label="Payment note">
         <p className="muted small">
-          Payments run through a <strong>Stripe sandbox placeholder</strong> — upgrades are
-          recorded instantly for evaluation and no card is charged. Production keys drop in
+          Payments are handled through our sales team at{' '}
+          <a href="mailto:sales@imad.example.com">sales@imad.example.com</a> — live
+          card checkout opens after Stripe is connected. Upgrades are recorded
+          instantly for evaluation and no card is charged. Production keys drop in
           via <code>STRIPE_SECRET_KEY</code> (see docs/monetization.md).
         </p>
       </Card>
