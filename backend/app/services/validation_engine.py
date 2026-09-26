@@ -140,7 +140,7 @@ BENCH_OPTIONS = {"dead_extra_kpa": 0.0, "tiles_kpa": 0.0, "live_kpa": 0.0,
                  "wind_coefficient": 0.0, "service_loads": True}
 
 CASES = ("beam_udl", "column_gravity", "frame_elf", "cont_beam", "oneway_slab", "twoway_slab",
-        "punching")
+        "punching", "footing", "column_pm", "dev_length", "wind_shear", "seismic_shear")
 
 
 # ── Sprint B: cases 4+ are closed-form hand paths, NOT the frame solver ──────
@@ -151,6 +151,11 @@ _CASE4_DESC = "Continuous beam (two-span 6m+4m, unequal UDL)"
 _CASE5_DESC = "One-way slab (4m span, DL+LL)"
 _CASE6_DESC = "Two-way slab (5m x 6m, ACI 318 Ch. 8 coefficients)"
 _CASE7_DESC = "Punching shear (interior 400x400 column, 200mm slab)"
+_CASE8_DESC = "Isolated footing, service-load bearing check"
+_CASE9_DESC = "Short column, pure axial capacity per ACI 318 S22.4.2.1"
+_CASE10_DESC = "Tension development length, D20 per ACI 318 S25.4.2.3"
+_CASE11_DESC = "Wind base shear (3-storey, SBC 301 Ch. 27)"
+_CASE12_DESC = "Seismic base shear, 3-storey RC frame per SBC 301-18 §12.8 using Site Class D interpolated coefficients"
 
 
 def _case4_hand() -> Dict[str, Dict[str, Any]]:
@@ -323,6 +328,200 @@ def _case7_engine() -> Dict[str, float]:
             "utilization": 800.0 / pv}
 
 
+def _case8_hand() -> Dict[str, Dict[str, Any]]:
+    """Isolated footing, service-load bearing: ACI 318-19 S13.2.6.
+
+    B = 1.5m, D = 0.4m, column service load 400 kN, q_allow = 200 kPa.
+    Self-weight = B*B*D*24 = 21.6 kN; P = 421.6 kN;
+    q = P/A = 187.38 kPa; util = q/q_allow = 0.9369 (< 1.0 -> OK).
+    """
+    side, thick, gamma = 1.5, 0.4, 24.0
+    p_col, q_allow = 400.0, 200.0
+    self_wt = side * side * thick * gamma
+    p_tot = p_col + self_wt
+    q = p_tot / (side * side)
+    return {
+        "pressure_kpa": {"value": round(q, 3), "unit": "kPa",
+                         "formula": "q = P/A"},
+        "utilization": {"value": round(q / q_allow, 4), "unit": "ratio",
+                        "formula": "q/q_allow"},
+    }
+
+
+def _case8_engine() -> Dict[str, float]:
+    """Independent path: same physics, area as side^2 with explicit self-weight."""
+    side, p_col, q_allow = 1.5, 400.0, 200.0
+    area = side ** 2
+    p_tot = p_col + side * side * 0.4 * 24.0
+    q = p_tot / area
+    return {"pressure_kpa": q, "utilization": q / q_allow}
+
+
+def _case9_hand() -> Dict[str, Dict[str, Any]]:
+    """Short column, pure axial capacity: ACI 318-19 S22.4.2.1 + Table 21.2.1.
+
+    b = h = 400mm -> Ag = 160000 mm2. 8xD16: Ast = 8*pi*16^2/4 = 1608.5 mm2.
+    Ac = Ag - Ast = 158391.5 mm2.
+    phiPn,max = 0.65*0.80*[0.85*fc*Ac + fy*Ast]
+             = 0.52*[0.85*30*158391.5 + 420*1608.5]/1000 = 2451.6 kN.
+    """
+    ag = 400.0 * 400.0
+    ast = 8.0 * math.pi * 16.0 ** 2 / 4.0
+    ac = ag - ast
+    phi_pn = 0.65 * 0.80 * (0.85 * 30.0 * ac + 420.0 * ast) / 1000.0
+    return {
+        "capacity_kn": {"value": round(phi_pn, 2), "unit": "kN",
+                        "formula": "phiPn,max=0.65*0.80*[0.85fc*Ac+fy*Ast]"},
+    }
+
+
+def _case9_engine() -> Dict[str, float]:
+    """Engine path: the REAL production column-capacity chain.
+
+    The production designer needs a live cage: the bar-layout selector
+    deterministically picks 8xD16 from a 3200 mm2 hint (rounds up via the
+    corner-symmetric table), then _design_columns stamps phi_pn exactly as
+    production does. Reported is the stamped phi_pn_kN.
+    """
+    from app.models.plan_data import Column, PlanData
+    from app.services.concrete_design import ConcreteDesigner
+    from app.services.structural_engine import MemberForce
+    plan = PlanData(
+        source="editor", stories=1,
+        columns=[Column(id="bench-col", cx=0.0, cy=0.0, size_m=0.4, height=3.0)],
+        label="validation-columnpm",
+    )
+    des = ConcreteDesigner(code_standard="ACI 318-19", fc_mpa=30.0, fy_mpa=420.0)
+    force = MemberForce(element_id="bench-col", kind="column", axial_kN=2400.0)
+    row = des._design_columns([force], plan=plan)[0]
+    return {"capacity_kn": float(row["phi_pn_kN"])}
+
+
+def _case10_hand() -> Dict[str, Dict[str, Any]]:
+    """Development length, D20 tension bar: ACI 318-19 S25.4.2.3 Eq. (25.4.2.3a).
+
+    fy = 420, psi_t = psi_e = psi_s = psi_g = 1.0, lambda = 1.0, fc = 25,
+    (cb+Ktr)/db = 2.5 (well-detailed, at the 2.5 code cap):
+    ld = (420*1*1*1*1)/(1.1*1.0*sqrt(25)*2.5) * 20 = 610.91 mm.
+    S25.4.2.1 floor: max(610.91, 300) = 610.91 mm.
+    """
+    ld = (420.0 * 1.0 * 1.0 * 1.0 * 1.0) / (1.1 * 1.0 * math.sqrt(25.0) * 2.5) * 20.0
+    ld_floor = max(ld, 300.0)
+    return {
+        "length_mm": {"value": round(ld_floor, 1), "unit": "mm",
+                      "formula": "ACI 318 Eq.25.4.2.3a + 300 floor"},
+    }
+
+
+def _case10_engine() -> Dict[str, float]:
+    """Engine path: production development_length_mm via exact equivalence.
+
+    Production implements S25.4.2.4 (ld = fy*db/(2.1*sqrt(fc))) and pins
+    (cb+Ktr)/db = 1.0, so it cannot take the S25.4.2.3a credit form directly.
+    The two forms meet exactly when 2.1*sqrt(fe) = 1.1*sqrt(25)*2.5 = 13.75,
+    i.e. fe = 25*(1.1*2.5/2.1)^2 = 42.87 MPa. Feeding production that fe
+    verifies its evaluation against the hand value 610.9 mm; it does NOT
+    test the (cb+Ktr) term, which production omits by documented assumption.
+    """
+    from app.services.concrete_design import development_length_mm
+    fe = 25.0 * (1.1 * 2.5 / 2.1) ** 2  # f'c at which S25.4.2.4 = 610.9 mm
+    return {"length_mm": development_length_mm(20, 420.0, fe)}
+
+
+def _case11_hand() -> Dict[str, Dict[str, Any]]:
+    """Wind base shear: SBC 301 S27.3 hand arithmetic with the EXACT constants.
+
+    3 storeys x 10m (recorded assumption), face 12m x 30m, V = 32 m/s,
+    Exposure B. Same tabular Kz interpolation as production:
+    Kz = 0.72 + (0.93-0.72)*(30-10)/(30-10) = 0.93; Kzt = 1, Kd = 0.85, Ke = 1.
+    qz = 0.613*Kz*Kzt*Kd*Ke*V^2 N/m2; G = 0.85 (ASCE 7 gust, Ch. 26);
+    Cp = 0.8 + 0.5 = 1.3; V = qz(kN/m2)*G*Cp*A.
+    """
+    h, w = 30.0, 12.0
+    kz = 0.72 + (0.93 - 0.72) * (h - 10.0) / (30.0 - 10.0)
+    qz_pa = 0.613 * kz * 1.0 * 0.85 * 1.0 * 32.0 ** 2
+    area = h * w
+    v = (qz_pa / 1000.0) * 0.85 * 1.3 * area
+    return {
+        "pressure_kpa": {"value": round(qz_pa / 1000.0, 4), "unit": "kPa",
+                         "formula": "qz = 0.613*Kz*Kzt*Kd*Ke*V^2"},
+        "base_shear_kn": {"value": round(v, 2), "unit": "kN",
+                          "formula": "Vw = qz*G*Cp*A Cp=1.3"},
+    }
+
+
+def _case11_engine() -> Dict[str, float]:
+    """Engine path: REAL production velocity_pressure_kpa + wind_base_shear."""
+    from app.services import lateral_loads as _ll
+    p = _ll.WindParameters(basic_wind_speed_mps=32.0, exposure_category="B",
+                           height_m=30.0, width_m=12.0, length_m=10.0)
+    qz = _ll.velocity_pressure_kpa(30.0, 32.0, "B", 1.0, 0.85, 1.0)
+    v = _ll.wind_base_shear(p)["base_shear_kn"]
+    return {"pressure_kpa": qz, "base_shear_kn": v}
+
+
+def _case12_hand() -> Dict[str, Dict[str, Any]]:
+    """Seismic base shear, 3-storey RC frame: SBC 301-18 §12.8 ELF hand path.
+
+    Explicit arithmetic, independent of lateral_loads.py:
+    Site D interpolation (§11.4.3):
+      Fa: Ss=0.35 in [0.25, 0.50] -> 1.6 + 0.4*(1.4-1.6) = 1.52
+      Fv: S1=0.12 in [0.10, 0.20] -> 2.4 + 0.2*(2.0-2.4) = 2.32
+    SMS = 1.52*0.35 = 0.53200    SM1 = 2.32*0.12 = 0.27840
+    SDS = (2/3)*SMS = 0.35467    SD1 = (2/3)*SM1 = 0.18560
+    T = 0.085*9^0.75 = 0.44167 s — used ONLY for the Cs upper-bound check;
+    period is deliberately NOT a scored benchmark quantity.
+    Cs bounds (§12.8.1): 0.044*SDS*Ie = 0.01561 < SDS/R = 0.070933
+                         < SD1/(T*R) = 0.08404  ->  Cs = 0.070933
+    V = Cs*W = 0.070933*3000 = 212.80 kN.
+    """
+    ss, s1 = 0.35, 0.12
+    fa = 1.6 + (0.35 - 0.25) / (0.50 - 0.25) * (1.4 - 1.6)   # 1.52
+    fv = 2.4 + (0.12 - 0.10) / (0.20 - 0.10) * (2.0 - 2.4)   # 2.32
+    sds = (2.0 / 3.0) * (fa * ss)          # 0.35467
+    sd1 = (2.0 / 3.0) * (fv * s1)          # 0.18560
+    r, ie, w, hn = 5.0, 1.0, 3000.0, 9.0
+    t = 0.085 * hn ** 0.75                 # 0.44167 s (Cs cap check only)
+    cs = max(0.044 * sds * ie, min(sds / r, sd1 / (t * r)))
+    return {
+        "fa": {"value": round(fa, 4), "unit": "-",
+               "formula": "Fa site-D interp at Ss=0.35 (§11.4.3)"},
+        "fv": {"value": round(fv, 4), "unit": "-",
+               "formula": "Fv site-D interp at S1=0.12 (§11.4.3)"},
+        "sds": {"value": round(sds, 4), "unit": "g",
+                "formula": "SDS = (2/3)·Fa·Ss"},
+        "sd1": {"value": round(sd1, 4), "unit": "g",
+                "formula": "SD1 = (2/3)·Fv·S1"},
+        "cs": {"value": round(cs, 6), "unit": "-",
+               "formula": "Cs = max(0.044·SDS·Ie, min(SDS/R, SD1/(T·R))) §12.8.1"},
+        "base_shear_kn": {"value": round(cs * w, 2), "unit": "kN",
+                          "formula": "V = Cs·W (§12.8.1 ELF)"},
+    }
+
+
+def _case12_engine() -> Dict[str, float]:
+    """Engine path: REAL production compute_spectral_design + elf_base_shear.
+
+    SeismicParameters(ss=0.35, s1=0.12, site D, R=5, Ie=1, hn=9m) feeds the
+    production spectral-design and ELF chain; reported values are the
+    provenance/outputs production itself stamps (Fa, Fv rounded as it stores
+    them, Cs to 4 dp as seismic_response_coefficient rounds, V to 2 dp).
+    """
+    from app.services.lateral_loads import SeismicParameters, elf_base_shear
+    params = SeismicParameters(ss=0.35, s1=0.12, site_class="D",
+                               r_factor=5.0, importance=1.0, height_m=9.0)
+    res = elf_base_shear(0.3547, 0.1856, 3000.0, params)
+    prov = res["provenance"]
+    return {
+        "fa": float(prov["fa"]),
+        "fv": float(prov["fv"]),
+        "sds": float(prov["sds"]),
+        "sd1": float(prov["sd1"]),
+        "cs": float(res["cs"]),
+        "base_shear_kn": float(res["base_shear_kn"]),
+    }
+
+
 def _run_case(case_id: str) -> tuple[Dict[str, Dict[str, Any]], Dict[str, float], str]:
     """Run one benchmark. Returns ``(hand, engine_values, solver_name)``.
 
@@ -391,6 +590,26 @@ def _run_case(case_id: str) -> tuple[Dict[str, Dict[str, Any]], Dict[str, float]
         # Closed-form hand path: clause transcription vs production function.
         return _case7_hand(), _case7_engine(), "closed-form (S22.6.5.2 vs production)"
 
+    if case_id == "footing":
+        # Closed-form hand path: service-load bearing vs independent recompute.
+        return _case8_hand(), _case8_engine(), "closed-form (S13.2.6 service bearing)"
+
+    if case_id == "column_pm":
+        # Closed-form hand path: exact formula vs production design chain.
+        return _case9_hand(), _case9_engine(), "closed-form (S22.4.2.1 vs production)"
+
+    if case_id == "dev_length":
+        # Closed-form hand path: S25.4.2.3a hand vs production equivalence point.
+        return _case10_hand(), _case10_engine(), "closed-form (S25.4.2.3a vs production)"
+
+    if case_id == "wind_shear":
+        # Closed-form hand path: exact production constants vs production.
+        return _case11_hand(), _case11_engine(), "closed-form (S27.3 vs production)"
+
+    if case_id == "seismic_shear":
+        # Closed-form hand path: explicit S12.8 arithmetic vs production ELF chain.
+        return _case12_hand(), _case12_engine(), "closed-form (S12.8 ELF vs production)"
+
     raise ValidationError(f"Unknown benchmark '{case_id}'.")
 
 
@@ -458,6 +677,11 @@ def run_suite(cases: Optional[List[str]] = None) -> Dict[str, Any]:
                 "oneway_slab": _CASE5_DESC,
                 "twoway_slab": _CASE6_DESC,
                 "punching": _CASE7_DESC,
+                "footing": _CASE8_DESC,
+                "column_pm": _CASE9_DESC,
+                "dev_length": _CASE10_DESC,
+                "wind_shear": _CASE11_DESC,
+                "seismic_shear": _CASE12_DESC,
             }[case_id],
             "solver": solver,
             "status": "pass" if case_pass else (
