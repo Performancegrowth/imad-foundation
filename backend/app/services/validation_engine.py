@@ -139,7 +139,188 @@ def _synthetic_frame_plan(stories: int = 2):
 BENCH_OPTIONS = {"dead_extra_kpa": 0.0, "tiles_kpa": 0.0, "live_kpa": 0.0,
                  "wind_coefficient": 0.0, "service_loads": True}
 
-CASES = ("beam_udl", "column_gravity", "frame_elf")
+CASES = ("beam_udl", "column_gravity", "frame_elf", "cont_beam", "oneway_slab", "twoway_slab",
+        "punching")
+
+
+# ── Sprint B: cases 4+ are closed-form hand paths, NOT the frame solver ──────
+# Each `_caseN_hand()` is plain textbook arithmetic; each `_caseN_engine()` is
+# an INDEPENDENT second implementation (real production function or an
+# independent solution method). No engineering math file is modified.
+_CASE4_DESC = "Continuous beam (two-span 6m+4m, unequal UDL)"
+_CASE5_DESC = "One-way slab (4m span, DL+LL)"
+_CASE6_DESC = "Two-way slab (5m x 6m, ACI 318 Ch. 8 coefficients)"
+_CASE7_DESC = "Punching shear (interior 400x400 column, 200mm slab)"
+
+
+def _case4_hand() -> Dict[str, Dict[str, Any]]:
+    """Two-span continuous beam, SIMPLE ends — three-moment (Clapeyron).
+
+    L1=6m w1=20 kN/m; L2=4m w2=30 kN/m.
+    2*M_B*(L1+L2) = -(w1*L1^3/4 + w2*L2^3/4)  ->  M_B = -78 kN-m (hogging).
+    Reactions by span equilibrium: R_A = (M_B + w1*L1^2/2)/L1 = 47 kN,
+    R_C = (M_B + w2*L2^2/2)/L2 = 40.5 kN.
+    """
+    L1, L2, w1, w2 = 6.0, 4.0, 20.0, 30.0
+    m_b = -(w1 * L1 ** 3 / 4.0 + w2 * L2 ** 3 / 4.0) / (2.0 * (L1 + L2))
+    r_a = (m_b + w1 * L1 ** 2 / 2.0) / L1
+    r_c = (m_b + w2 * L2 ** 2 / 2.0) / L2
+    return {
+        "moment_b_knm": {"value": round(abs(m_b), 4), "unit": "kN-m",
+                         "formula": "3-moment M_B"},
+        "reaction_a_kn": {"value": round(r_a, 4), "unit": "kN",
+                          "formula": "R_A = (M_B + wL^2/2)/L"},
+        "reaction_c_kn": {"value": round(r_c, 4), "unit": "kN",
+                          "formula": "R_C = (M_B + wL^2/2)/L"},
+    }
+
+
+def _case4_engine() -> Dict[str, float]:
+    """Independent path: stiffness distribution with PINNED far ends.
+
+    Modified stiffness k = 3I/L and FEM = wL^2/8 (NOT wL^2/12 — that is the
+    fixed-end value and using it on a simple span was the old line-430-era
+    bug). Joint B: balance unbalanced FEMs by relative stiffness; reactions
+    by span equilibrium on the hogging moment magnitude.
+    """
+    L1, L2, w1, w2 = 6.0, 4.0, 20.0, 30.0
+    fem_ba = w1 * L1 ** 2 / 8.0      # span AB, A pinned
+    fem_bc = -w2 * L2 ** 2 / 8.0     # span BC, C pinned
+    k1, k2 = 3.0 / L1, 3.0 / L2
+    unbal = fem_ba + fem_bc
+    m_ba = fem_ba - (k1 / (k1 + k2)) * unbal
+    m_bc = fem_bc - (k2 / (k1 + k2)) * unbal
+    mb_hog = -abs(m_ba)              # physical hogging at interior support
+    r_a = (mb_hog + w1 * L1 ** 2 / 2.0) / L1
+    r_c = (-abs(m_bc) + w2 * L2 ** 2 / 2.0) / L2
+    return {"moment_b_knm": abs(m_ba),
+            "reaction_a_kn": r_a, "reaction_c_kn": r_c}
+
+
+def _case5_hand() -> Dict[str, Dict[str, Any]]:
+    """One-way slab, 4m simply supported, 1m strip: wu = 1.2D+1.6L.
+
+    D = 1.5 kN/m2, L = 2.5 kN/m2 -> wu = 5.8 kN/m.
+    Mu = wu*L^2/8 = 11.6 kN-m/m.
+    As from Mu = phi*As*fy*(d - a/2), a = As*fy/(0.85*fc*b), b = 1000mm,
+    d = 170mm (200mm slab - 25 cover - 5 half-bar), phi = 0.9, fy = 420,
+    fc = 30 -> quadratic gives As = 182.12 mm2/m.
+    delta = 5*w*L^4/(384*E*I), E = 4700*sqrt(30) kPa, I = 1*0.2^3/12.
+    """
+    L = 4.0
+    wu = 1.2 * 1.5 + 1.6 * 2.5
+    mu = wu * L ** 2 / 8.0
+    phi, fy, fc, b, d = 0.9, 420.0, 30.0, 1000.0, 170.0
+    qa = phi * fy ** 2 / (2.0 * 0.85 * fc * b)
+    qb = -phi * fy * d
+    qc = mu * 1e6
+    disc = qb * qb - 4.0 * qa * qc
+    as_req = (-qb - math.sqrt(disc)) / (2.0 * qa)
+    delta = 5 * wu * L ** 4 / (384 * E_KPA * (1.0 * 0.20 ** 3 / 12.0)) * 1000
+    return {
+        "moment_knm": {"value": round(mu, 4), "unit": "kN-m/m",
+                       "formula": "Mu = wu*L^2/8"},
+        "steel_mm2": {"value": round(as_req, 2), "unit": "mm2/m",
+                      "formula": "As from Mu=phi*As*fy*(d-a/2)"},
+        "deflection_mm": {"value": round(delta, 3), "unit": "mm",
+                          "formula": "d = 5*w*L^4/(384*E*I)"},
+    }
+
+
+def _case5_engine() -> Dict[str, float]:
+    """Engine path: bisection on the REAL production capacity function."""
+    from app.services.concrete_design import beam_flexural_moment_capacity_knm
+    wu = 1.2 * 1.5 + 1.6 * 2.5
+    mu = wu * 4.0 ** 2 / 8.0
+    lo, hi = 0.0, 5000.0
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        cap = beam_flexural_moment_capacity_knm(mid, 420.0, 30.0, 1000.0, 170.0, 0.9)
+        if cap >= mu:
+            hi = mid
+        else:
+            lo = mid
+    delta = 5 * wu * 4.0 ** 4 / (384 * E_KPA * (1.0 * 0.20 ** 3 / 12.0)) * 1000
+    return {"moment_knm": mu, "steel_mm2": hi, "deflection_mm": delta}
+
+
+def _case6_hand() -> Dict[str, Dict[str, Any]]:
+    """Two-way slab 5x6m simply supported: DDM design-aid coefficients.
+
+    m = lx/ly = 5/6 ~= 0.833, linear interpolation between the m = 0.80 and
+    m = 0.85 coefficient rows: t = (m - 0.80)/0.05.
+    Ca = 0.050 + (0.045 - 0.050)*t = 0.0467 (positive moment, short span).
+    Cb = 0.024 + (0.028 - 0.024)*t = 0.0267 (positive moment, long span).
+    Ma = Ca*wu*lx^2, Mb = Cb*wu*ly^2 with wu = 5.8 kN/m2.
+    """
+    lx, ly = 5.0, 6.0
+    wu = 1.2 * 1.5 + 1.6 * 2.5
+    m = lx / ly
+    t = (m - 0.80) / 0.05
+    ca = 0.050 + (0.045 - 0.050) * t
+    cb = 0.024 + (0.028 - 0.024) * t
+    return {
+        "moment_short": {"value": round(ca * wu * lx ** 2, 4), "unit": "kN-m/m",
+                         "formula": "Ma = Ca*wu*lx^2"},
+        "moment_long": {"value": round(cb * wu * ly ** 2, 4), "unit": "kN-m/m",
+                        "formula": "Mb = Cb*wu*ly^2"},
+    }
+
+
+def _case6_engine() -> Dict[str, float]:
+    """Independent path: same table interpolated from the other end.
+
+    Equivalent arithmetic written in the opposite order
+    (interpolate from m = 0.85 downward instead of from m = 0.80 upward),
+    so any off-by-one/row-swap mistake in either path shows up as a diff.
+    """
+    lx, ly = 5.0, 6.0
+    wu = 1.2 * 1.5 + 1.6 * 2.5
+    m = lx / ly
+    ca = 0.045 + (0.050 - 0.045) * (0.85 - m) / 0.05
+    cb = 0.028 + (0.024 - 0.028) * (0.85 - m) / 0.05
+    return {"moment_short": ca * wu * lx ** 2,
+            "moment_long": cb * wu * ly ** 2}
+
+
+def _case7_hand() -> Dict[str, Dict[str, Any]]:
+    """Punching shear, interior 400x400 column, 200mm slab: clause transcription.
+
+    Independent literal reading of ACI 318-19 S22.6.5.2 (SI, Newtons) — the
+    same three expressions production implements, written separately here:
+    d = 200 - 25(cover) - 20(half-bar) = 155mm; bo = 4*(c + d) = 2220mm.
+    vc1 = (2/12 + (4/12)/beta)*sqrt(fc)*bo*d, beta = 1.0 (square column).
+    vc2 = ((alpha_s*d/bo) + 2)/12*sqrt(fc)*bo*d, alpha_s = 40 (interior).
+    vc3 = (4/12)*sqrt(fc)*bo*d.  Vc = min/1000 kN; phi = 0.75.
+    Expected: Vc = min(942.4, 752.8, 628.2) = 628.24 kN;
+    phiVc = 471.18 kN; util = 800/471.18 = 1.698.
+    """
+    d = 200.0 - 25.0 - 20.0
+    bo = 4.0 * (400.0 + d)
+    root = math.sqrt(30.0)
+    v1 = (2.0 / 12.0 + (4.0 / 12.0) / 1.0) * root * bo * d
+    v2 = ((40.0 * d / bo) + 2.0) / 12.0 * root * bo * d
+    v3 = (4.0 / 12.0) * root * bo * d
+    vc = min(v1, v2, v3) / 1000.0
+    return {
+        "perimeter_mm": {"value": round(bo, 1), "unit": "mm",
+                         "formula": "bo = 4*(c+d)"},
+        "capacity_kn": {"value": round(0.75 * vc, 2), "unit": "kN",
+                        "formula": "phiVc least-of-three"},
+        "utilization": {"value": round(800.0 / (0.75 * vc), 4), "unit": "ratio",
+                        "formula": "V/phiVc"},
+    }
+
+
+def _case7_engine() -> Dict[str, float]:
+    """Engine path: the REAL production _punching_shear_capacity."""
+    from app.services import foundation_design as _fd
+    d = 200.0 - 25.0 - 20.0
+    bo = 4.0 * (400.0 + d)
+    vc = _fd._punching_shear_capacity(30.0, bo, d, 1.0, 40)
+    pv = 0.75 * vc
+    return {"perimeter_mm": bo, "capacity_kn": pv,
+            "utilization": 800.0 / pv}
 
 
 def _run_case(case_id: str) -> tuple[Dict[str, Dict[str, Any]], Dict[str, float], str]:
@@ -193,6 +374,22 @@ def _run_case(case_id: str) -> tuple[Dict[str, Dict[str, Any]], Dict[str, float]
             "base_shear_kn": res.reactions.get("base_shear_kN", 0.0),
             "period_s": t1,
         }, res.diagnostics.solver
+
+    if case_id == "cont_beam":
+        # Closed-form hand path (no frame solver): independent solution method.
+        return _case4_hand(), _case4_engine(), "closed-form (3-moment vs slope-deflection)"
+
+    if case_id == "oneway_slab":
+        # Closed-form hand path: quadratic vs production capacity bisection.
+        return _case5_hand(), _case5_engine(), "closed-form (quadratic vs production)"
+
+    if case_id == "twoway_slab":
+        # Closed-form hand path: two interpolation orders must agree.
+        return _case6_hand(), _case6_engine(), "closed-form (DDM coefficients)"
+
+    if case_id == "punching":
+        # Closed-form hand path: clause transcription vs production function.
+        return _case7_hand(), _case7_engine(), "closed-form (S22.6.5.2 vs production)"
 
     raise ValidationError(f"Unknown benchmark '{case_id}'.")
 
@@ -257,6 +454,10 @@ def run_suite(cases: Optional[List[str]] = None) -> Dict[str, Any]:
                 "beam_udl": "Simply supported beam under UDL",
                 "column_gravity": "Short column — gravity takedown",
                 "frame_elf": "Two-storey frame — equivalent lateral force",
+                "cont_beam": _CASE4_DESC,
+                "oneway_slab": _CASE5_DESC,
+                "twoway_slab": _CASE6_DESC,
+                "punching": _CASE7_DESC,
             }[case_id],
             "solver": solver,
             "status": "pass" if case_pass else (
