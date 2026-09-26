@@ -9,9 +9,9 @@ Seismic (§12.8):
     Cs = Sds / (R / I)          (§12.8.1.1)
     V  = Cs · W                  (ELF base shear)
 
-Wind (ch. 27 — simplified):
+Wind (ch. 27 — rigid buildings only, gust factor applied):
     qz = 0.613 · Kz · Kzt · Kd · Ke · V²   (velocity pressure, N/m²)
-    Vw = qz · Cp · A                        (base shear)
+    Vw = qz · G · Cp · A                   (base shear, G = 0.85 rigid)
 
 All tables are from SBC 301 / ASCE 7-10 (which SBC adopts). Defaults are
 provided for Saudi Arabia where the survey omits them, and every default
@@ -54,6 +54,12 @@ DEFAULT_KZT = 1.0
 DEFAULT_KD = 0.85
 DEFAULT_KE = 1.0
 
+# Gust-effect factor for rigid buildings (SBC 301-18 §26.11.1 / ASCE 7 Table
+# 26.11-1: G = 0.85 for rigid). The simplified ch. 27 path in this module
+# supports rigid buildings only — see the building_behavior guard in
+# wind_base_shear.
+DEFAULT_GUST_EFFECT_FACTOR = 0.85
+
 
 @dataclass
 class SeismicParameters:
@@ -75,6 +81,8 @@ class WindParameters:
     kzt: float = DEFAULT_KZT
     kd: float = DEFAULT_KD
     ke: float = DEFAULT_KE
+    gust_effect_factor: float = DEFAULT_GUST_EFFECT_FACTOR
+    building_behavior: str = "rigid"  # simplified ch. 27 path: rigid ONLY
     height_m: float = 6.0
     width_m: float = 12.0
     length_m: float = 20.0
@@ -196,6 +204,23 @@ def velocity_pressure_kpa(height_m: float, wind_speed_mps: float,
 
 
 def wind_base_shear(params: WindParameters) -> Dict[str, Any]:
+    """Wind base shear: V = qz · G · Cp · A (rigid buildings only).
+
+    p_windward = qz·G·0.8, p_leeward = qz·G·0.5 -> Cp_total = 1.3 applied on
+    the projected windward face area (h · w). This is the §27.4.1-style
+    directional MWFRS combination (per-height qz with explicit G and Cp) —
+    NOT the §27.5 simplified tabular procedure, which reads pressures from
+    Fig. 27.5-1 and never exposes Kz/qz/Cp as terms. The provenance method
+    string below reports exactly that.
+    """
+    behavior = str(getattr(params, "building_behavior", "rigid") or "rigid").lower()
+    if behavior != "rigid":
+        raise ValueError(
+            f"wind_base_shear supports rigid buildings only "
+            f"(SBC 301-18 §26.11.1, G = 0.85); got building_behavior={behavior!r}. "
+            "Flexible/high-rise buildings need an ASCE 7 §26.11.5 gust-factor "
+            "analysis — add one before removing this guard.")
+    g = float(params.gust_effect_factor)
     h = params.height_m
     w = params.width_m
     qz = velocity_pressure_kpa(
@@ -203,16 +228,23 @@ def wind_base_shear(params: WindParameters) -> Dict[str, Any]:
         params.kzt, params.kd, params.ke)
     cp_total = 1.3
     area = h * w
-    v_wind = qz * cp_total * area
+    v_wind = qz * g * cp_total * area
     provenance = {
         "basic_wind_speed_mps": params.basic_wind_speed_mps,
         "exposure": params.exposure_category,
         "kzt": params.kzt, "kd": params.kd, "ke": params.ke,
         "kz": round(_kz_wind(h, params.exposure_category), 3),
         "qz_kpa": round(qz, 3),
+        "gust_effect_factor": g,
+        "gust_method": "prescribed G for rigid buildings",
+        "building_behavior": "rigid",
+        "building_behavior_scope": ("Simplified method supports rigid "
+                                    "buildings only. Flexible/high-rise "
+                                    "buildings not supported."),
         "cp_total": cp_total,
         "projected_area_m2": round(area, 1),
-        "method": "SBC 301 ch. 27 simplified (ASCE 7-10 §27.5)",
+        "method": "SBC 301 ch. 27 directional MWFRS (ASCE 7 §27.4.1-style: "
+                  "per-height qz, explicit G and Cp)",
     }
     return {
         "base_shear_kn": round(v_wind, 2),

@@ -126,6 +126,40 @@ def test_wind_base_shear_deterministic():
     assert a["base_shear_kn"] == b["base_shear_kn"]
 
 
+def test_wind_gust_factor_applied_exactly_once():
+    """G must scale the base shear proportionally (V = qz·G·Cp·A)."""
+    base = WindParameters(height_m=6.0, width_m=12.0, length_m=20.0)
+    r085 = wind_base_shear(base)["base_shear_kn"]
+    assert base.gust_effect_factor == pytest.approx(0.85)
+    import dataclasses
+    g100 = dataclasses.replace(base, gust_effect_factor=1.0)
+    r100 = wind_base_shear(g100)["base_shear_kn"]
+    assert r100 == pytest.approx(r085 / 0.85, rel=1e-2)
+    g050 = dataclasses.replace(base, gust_effect_factor=0.5)
+    r050 = wind_base_shear(g050)["base_shear_kn"]
+    assert r050 == pytest.approx(r085 * 0.5 / 0.85, rel=1e-2)
+
+
+def test_wind_provenance_exposes_gust_metadata():
+    """Provenance must disclose G, its method, and the rigid-only scope."""
+    result = wind_base_shear(WindParameters(height_m=6.0, width_m=12.0))
+    prov = result["provenance"]
+    assert prov["gust_effect_factor"] == pytest.approx(0.85)
+    assert prov["gust_method"] == "prescribed G for rigid buildings"
+    assert prov["building_behavior"] == "rigid"
+    assert "§27.4.1" in prov["method"]
+    assert "rigid" in prov["building_behavior_scope"].lower()
+
+
+def test_wind_flexible_building_fails_clearly():
+    """Unsupported flexible buildings must fail loudly — never silently use G."""
+    import dataclasses
+    flex = dataclasses.replace(
+        WindParameters(height_m=6.0, width_m=12.0), building_behavior="flexible")
+    with pytest.raises(ValueError, match="rigid buildings only"):
+        wind_base_shear(flex)
+
+
 def test_wind_base_shear_with_survey_params():
     """When survey provides wind speed/exposure, they drive the computation."""
     wp = WindParameters(basic_wind_speed_mps=40.0, exposure_category="C",
