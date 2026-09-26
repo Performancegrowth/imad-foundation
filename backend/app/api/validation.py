@@ -27,7 +27,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 # published report. Writes stay behind auth on `router` above.
 public_router = APIRouter()
 
-KNOWN_CASES = ["beam_udl", "column_gravity", "frame_elf"]
+KNOWN_CASES = ("beam_udl", "column_gravity", "frame_elf")
 # Accept either the canonical engine ids above or the friendly aliases below.
 _CASE_ALIASES = {"beam": "beam_udl", "column": "column_gravity", "frame": "frame_elf"}
 
