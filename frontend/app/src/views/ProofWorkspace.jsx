@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import Seo from '../components/Seo.jsx'
 import { SITE_URL } from '../seoData.js'
 import { getPublicValidationReport } from '../platformApi.js'
+import { get, BASE_URL } from '../apiClient.js'
 import { Card } from '../components/shadcn.jsx'
 import { LoadingCard, EmptyCard } from '../components/ui.jsx'
 
@@ -25,6 +26,7 @@ export default function ProofWorkspace() {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
+  const [hash, setHash] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -32,6 +34,10 @@ export default function ProofWorkspace() {
       .then((r) => { if (alive) setReport(r) })
       .catch(() => { if (alive) setMissing(true) })
       .finally(() => { if (alive) setLoading(false) })
+    // B3 trust asset: public SHA-256 of the canonical report (no auth).
+    get('/validation/hash')
+      .then((d) => { if (alive) setHash(d?.hash || '') })
+      .catch(() => {})
     return () => { alive = false }
   }, [])
 
@@ -72,6 +78,17 @@ export default function ProofWorkspace() {
             load assumptions — any difference isolates solver error, not input
             mismatch. Pass band ±5%, conservative warning 5–10%.
           </p>
+
+          <div style={{ margin: '18px 0 4px' }}>
+            <a className="btn-primary on-light"
+               href={`${BASE_URL}/validation/public/report/pdf`}>
+              Download PDF report
+            </a>
+            <p className="mono muted small"
+               style={{ marginTop: 8, wordBreak: 'break-all' }}>
+              {hash ? `SHA-256: ${hash}` : 'SHA-256: computing…'}
+            </p>
+          </div>
 
           <div className="summary-grid four" style={{ margin: '24px 0' }}>
             <div className="stat">

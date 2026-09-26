@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+# Deterministic PDFs: strip creation-date / random doc-ID so identical inputs
+# produce byte-identical files (needed by the reproducible validation report).
+from reportlab import rl_config
+rl_config.invariant = True
+
 log = logging.getLogger("imad.exports")
 
 
@@ -255,6 +260,115 @@ def simple_bar_chart(title: str, series: Sequence[tuple[str, float]],
         d.add(String(55, height - 22, f"Values in {unit}",
                      fontName="Helvetica-Oblique", fontSize=8))
     return d
+
+
+def validation_report_pdf(report: dict, hash_value: str, computed_at: str) -> bytes:
+    """Public, shareable validation-suite PDF (B3 trust asset).
+
+    Renders the canonical ``run_suite()`` report — one row per benchmark
+    quantity plus an aggregate verdict row — with a per-page footer carrying
+    the SHA-256 of the exact JSON that ``GET /api/v1/validation/hash``
+    canonicalises, so every downloaded PDF ties back to a verifiable digest.
+    Built entirely in memory (``io.BytesIO``); ``rl_config.invariant`` (set at
+    module import) keeps the output byte-reproducible for identical input.
+    """
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.platypus import (
+            Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        )
+    except ImportError as exc:  # pragma: no cover
+        raise ExportError("reportlab is required for PDF export") from exc
+
+    import io
+
+    _, styles = _pdf_styles()
+    cases = report.get("cases", []) or []
+    passed = sum(1 for c in cases if c.get("status") == "pass")
+    warned = sum(1 for c in cases if c.get("status") == "warn")
+    failed = sum(1 for c in cases if c.get("status") == "fail")
+
+    story: List[Any] = [Paragraph("IMAD Structural Validation Report",
+                                  styles["title"])]
+    story.append(Paragraph("12-case benchmark suite", ParagraphStyle(
+        "valsub", parent=styles["body"], alignment=TA_CENTER, spaceAfter=8)))
+    story.append(Paragraph(
+        f"Computed at (UTC): {computed_at} &nbsp;·&nbsp; "
+        f"Tolerance ±{report.get('tolerance_pct', 5)}% &nbsp;·&nbsp; "
+        f"Accuracy {report.get('accuracy_score_pct', 0)}% &nbsp;·&nbsp; "
+        f"Verdict: {report.get('verdict', '')}", styles["small"]))
+    story.append(Spacer(1, 10))
+
+    rows: List[List[Any]] = [
+        ["Case ID", "Description", "Hand", "Engine", "Diff %", "Code", "Status"],
+    ]
+    for case in cases:
+        desc = str(case.get("description", ""))
+        quantities = case.get("quantities") or []
+        if not quantities:  # crashed case — still surface it, marked failed
+            rows.append([
+                case.get("case", ""),
+                Paragraph(f"<b>error</b> — {desc}<br/>{case.get('error', '')}",
+                          styles["small"]),
+                "—", "—", "—", "—",
+                str(case.get("status", "fail")).upper(),
+            ])
+            continue
+        for q in quantities:
+            rows.append([
+                case.get("case", ""),
+                Paragraph(f"<b>{q.get('quantity', '')}</b> — {desc}",
+                          styles["small"]),
+                _fmt(q.get("hand")), _fmt(q.get("engine")),
+                f"{q.get('diff_pct', 0)}%",
+                Paragraph(str(q.get("formula", "")), styles["small"]),
+                str(q.get("status", "")).upper(),
+            ])
+    rows.append([
+        f"Total {len(cases)}", f"Passed {passed}", f"Warned {warned}",
+        f"Failed {failed}", f"Verdict {report.get('verdict', '')}", "", "",
+    ])
+
+    table = Table(rows, colWidths=[58, 148, 52, 52, 44, 131, 30], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(_BRAND_GREEN)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("FONTSIZE", (0, 1), (-1, -1), 7.5),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D0D5DD")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2),
+         [colors.white, colors.HexColor("#F5F7FA")]),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FEF6DE")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(table)
+
+    def _footer(canvas, doc_):
+        """Every page: hash, timestamp, reproducibility note + page number."""
+        canvas.saveState()
+        canvas.setFont("Helvetica", 6.5)
+        canvas.setFillColor(colors.HexColor("#475467"))
+        canvas.drawString(40, 30, f"Validation hash: sha256:{hash_value}")
+        canvas.drawString(40, 21, f"Computed at: {computed_at}")
+        canvas.drawString(40, 12,
+                          "Reproducible via /api/v1/validation/hash — "
+                          "matching hash proves identical content.")
+        canvas.drawRightString(A4[0] - 40, 12, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4, topMargin=58, bottomMargin=44,
+        leftMargin=40, rightMargin=40, title="IMAD Structural Validation Report")
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    return buf.getvalue()
 
 
 # ═══════════════════════════════════════════════════ Word (DOCX) ─────────────
