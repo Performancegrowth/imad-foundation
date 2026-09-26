@@ -110,3 +110,59 @@ async def latest_pdf():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return FileResponse(path, media_type="application/pdf",
                         filename=path.replace("\\", "/").split("/")[-1])
+
+
+# ── B3 public trust assets (no auth): reproducible hash + shareable PDF ─────
+# Deliberately on `public_router` (no auth): prospects must be able to verify
+# the benchmark numbers without an account. NOTE: GET /validation/report/pdf
+# above is the authed stored-report download; the public PDF therefore lives
+# on its own path /validation/public/report/pdf so neither route shadows
+# the other.
+@public_router.get("/validation/hash",
+                   summary="SHA-256 of the canonical validation report")
+async def validation_hash() -> dict:
+    from app.services.validation_engine import run_suite
+    import hashlib, json
+    from datetime import datetime, timezone
+    report = run_suite()
+    canonical_report = dict(report)
+    canonical_report.pop("ran_at", None)   # timestamp varies per call; excluded from hash
+    canonical = json.dumps(canonical_report, sort_keys=True,
+                           separators=(",", ":"), ensure_ascii=False, default=str)
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return {
+        "hash": f"sha256:{digest}",
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "case_count": len(report.get("cases", [])),
+        "algorithm": "sha256",
+        "canonicalization": "json.dumps(sort_keys=True, separators=(',',':'))",
+        "excluded_fields": ["ran_at"],
+        "note": "ran_at varies per call; excluded from hash so the 12-case content hash is deterministic.",
+    }
+
+
+@public_router.get("/validation/public/report/pdf",
+                   summary="Download the validation report as PDF (public)")
+async def validation_report_pdf():
+    from app.services.validation_engine import run_suite
+    from app.services.exporters import validation_report_pdf as build_pdf
+    from fastapi.responses import Response
+    import hashlib, json
+    from datetime import datetime, timezone
+    report = run_suite()
+    canonical_report = dict(report)
+    canonical_report.pop("ran_at", None)   # timestamp varies per call; excluded from hash
+    canonical = json.dumps(canonical_report, sort_keys=True,
+                           separators=(",", ":"), ensure_ascii=False, default=str)
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    computed_at = datetime.now(timezone.utc).isoformat()
+    pdf_bytes = build_pdf(report, hash_value=digest, computed_at=computed_at)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="imad-validation-report.pdf"',
+            "X-Validation-Hash": f"sha256:{digest}",
+            "X-Computed-At": computed_at,
+        },
+    )
