@@ -232,6 +232,37 @@ export default function AnalysisWorkspace() {
           </Card>
 
           <Card>
+            <CardHeader><CardTitle>Equilibrium Check</CardTitle></CardHeader>
+            {result.equilibrium ? (
+              <>
+                {['vertical', 'horizontal', 'moment'].map((key) => {
+                  const comp = result.equilibrium[key]
+                  if (!comp || comp.status === 'NOT_APPLICABLE') return null
+                  const unit = key === 'moment' ? 'kN·m' : 'kN'
+                  const applied = key === 'moment' ? comp.applied_kNm : comp.applied_kN
+                  const react = key === 'moment' ? comp.reactions_kNm : comp.reactions_kN
+                  const variant = comp.status === 'PASS' ? 'success' : comp.status === 'WARN' ? 'warn' : 'fail'
+                  const label = key.charAt(0).toUpperCase() + key.slice(1)
+                  return (
+                    <p className="muted small" key={key}>
+                      {label}: {applied} {unit} applied → {react} {unit} reactions Δ {comp.error_pct}%{' '}
+                      <Badge variant={variant}>{comp.status}</Badge>
+                    </p>
+                  )
+                })}
+                <p className="muted small">
+                  Overall:{' '}
+                  <Badge variant={result.equilibrium.overall === 'PASS' ? 'success' : result.equilibrium.overall === 'WARN' ? 'warn' : result.equilibrium.overall === 'NOT_APPLICABLE' ? 'default' : 'fail'}>
+                    {result.equilibrium.overall}
+                  </Badge>
+                </p>
+              </>
+            ) : (
+              <p className="muted small">No equilibrium data for this run.</p>
+            )}
+          </Card>
+
+          <Card>
             <CardHeader><CardTitle>Concrete Design (ACI 318)</CardTitle></CardHeader>
             <p className="muted small">
               C{result.design?.concrete_strength_mpa || 30} · fy {result.design?.steel_yield_mpa || 460} MPa ·

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.models.plan_data import PlanData
 from app.models.survey_data import SurveyReading
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
+from app.services.equilibrium_check import check_equilibrium
 from app.services.structural_engine import OpenSeesEngine, StructuralError
 
 log = logging.getLogger("imad.api.analysis")
@@ -75,6 +76,8 @@ def run_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
 
     rid = result_id("an")
+    equilibrium = check_equilibrium({"loads": result.loads,
+                                     "reactions": result.reactions})
     save_result(rid, {
         "kind": "an",
         "project_id": request.project_id,
@@ -86,6 +89,7 @@ def run_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
         "design": result.design,
         "boq": result.boq,
         "loads": result.loads,
+        "equilibrium": equilibrium,
         "summary": {
             "max_moment_kNm": result.max_moment_kNm,
             "max_shear_kN": result.max_shear_kN,
@@ -108,6 +112,7 @@ def run_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
         "boq": result.boq,
         "loads": result.loads,
         "reactions": result.reactions,
+        "equilibrium": equilibrium,
         "member_forces": [f.__dict__ for f in result.member_forces],
     }
 
