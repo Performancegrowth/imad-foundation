@@ -108,6 +108,10 @@ export default function ProofWorkspace() {
               <strong>{String(report.ran_at || '').replace('T', ' ').slice(0, 19)}</strong>
             </div>
           </div>
+          <p className="muted small" style={{ fontSize: 12, marginTop: -12, marginBottom: 16 }}>
+            Verified means each case is independently checked against hand calculations
+            and reference implementations. This is not third-party certification.
+          </p>
 
           {(report.cases || []).map((c) => (
             <Card className="span-2" key={c.case} style={{ marginBottom: 16 }}>

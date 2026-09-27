@@ -689,14 +689,18 @@ def run_suite(cases: Optional[List[str]] = None) -> Dict[str, Any]:
             "quantities": qty_rows,
         })
 
+    # Verdict terminology: "verified" = internally validated against hand calcs
+    # and independent solvers (structuralcodes EC2 cross-check). "Certified" is
+    # reserved for third-party certifications (e.g., SCE, municipal authority)
+    # and must NOT be used until such certification exists.
     accuracy = round(100 * comparisons_passed / max(comparisons_total, 1), 1)
     return {
         "suite_version": "1.0",
         "tolerance_pct": TOLERANCE_PCT,
         "warning_band_pct": WARNING_BAND_PCT,
         "accuracy_score_pct": accuracy,
-        "verdict": ("certified" if accuracy >= 95 else
-                    "provisional" if accuracy >= 80 else "not certified"),
+        "verdict": ("verified" if accuracy >= 95 else
+                    "provisional" if accuracy >= 80 else "not verified"),
         "cases": results,
         "ran_at": datetime.now(timezone.utc).isoformat(),
     }
