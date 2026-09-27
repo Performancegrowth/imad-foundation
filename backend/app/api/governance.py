@@ -217,6 +217,7 @@ class SubmissionDocxBody(BaseModel):
 async def submission_docx_export(
     submission_id: str, body: Optional[SubmissionDocxBody] = None,
     user: TokenPayload = Depends(get_current_user),
+    db: Session = Depends(get_session),
 ) -> Dict[str, Any]:
     """The working companion to the sealed SBC 304 PDF.
 
@@ -228,6 +229,7 @@ async def submission_docx_export(
     record = _submissions.get(submission_id)
     if not record:
         raise HTTPException(status_code=404, detail="Submission not found.")
+    verify_project_owner(int(record.get("project_id") or 0), user, db)
     overrides = body or SubmissionDocxBody()
     project_id = int(record.get("project_id") or 0)
 
@@ -463,20 +465,24 @@ async def signature_request(payload: SignatureRequestBody, user: TokenPayload = 
 
 
 @router.get("/signature/{signature_id}", summary="Signature request status")
-async def signature_status(signature_id: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+async def signature_status(signature_id: str, user: TokenPayload = Depends(get_current_user),
+                           db: Session = Depends(get_session)) -> Dict[str, Any]:
     record = _signatures.get(signature_id)
     if not record:
         raise HTTPException(status_code=404, detail="Signature request not found.")
+    verify_project_owner(int(record.get("project_id") or 0), user, db)
     return record
 
 
 @router.post("/signature/{signature_id}/complete",
              summary="Webhook completion from the e-sign provider (placeholder)")
 async def signature_complete(signature_id: str, body: SignatureCompleteBody,
-                             user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+                             user: TokenPayload = Depends(get_current_user),
+                             db: Session = Depends(get_session)) -> Dict[str, Any]:
     existing = _signatures.get(signature_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Signature request not found.")
+    verify_project_owner(int(existing.get("project_id") or 0), user, db)
     updated = _signatures.update(
         signature_id, status=body.outcome,
         signed_at=now_iso() if body.outcome == "signed" else None,
@@ -491,7 +497,8 @@ async def signature_complete(signature_id: str, body: SignatureCompleteBody,
 @router.get("/submission/{ref}",
             summary="List a project's submissions (numeric project id) "
                     "or get one submission's details (submission id)")
-async def submission_ref(ref: str, user: TokenPayload = Depends(get_current_user)) -> Dict[str, Any]:
+async def submission_ref(ref: str, user: TokenPayload = Depends(get_current_user),
+                       db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Dual-mode per the roadmap #16 contract.
 
     ``/submission/{project_id}`` (digits) lists that project's packages,
@@ -501,6 +508,7 @@ async def submission_ref(ref: str, user: TokenPayload = Depends(get_current_user
     """
     if ref.isdigit():
         project_id = int(ref)
+        verify_project_owner(project_id, user, db)
         docs = _submissions.list(lambda d: d.get("project_id") == project_id)
         docs.sort(key=lambda d: str(d.get("created_at", "")), reverse=True)
         return {"project_id": project_id, "packages": docs, "submissions": docs}
@@ -508,6 +516,7 @@ async def submission_ref(ref: str, user: TokenPayload = Depends(get_current_user
     doc = _submissions.get(ref)
     if not doc:
         raise HTTPException(status_code=404, detail="Submission not found.")
+    verify_project_owner(int(doc.get("project_id") or 0), user, db)
     return doc
 
 
@@ -516,6 +525,7 @@ async def submission_ref(ref: str, user: TokenPayload = Depends(get_current_user
 async def submission_transition(
     submission_id: str, body: SubmissionStatusBody,
     user: TokenPayload = Depends(get_current_user),
+    db: Session = Depends(get_session),
 ) -> Dict[str, Any]:
     """Append an auditable tracking event and update the record's status.
 
@@ -526,6 +536,7 @@ async def submission_transition(
     doc = _submissions.get(submission_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Submission not found.")
+    verify_project_owner(int(doc.get("project_id") or 0), user, db)
 
     event = {
         "status": body.status,

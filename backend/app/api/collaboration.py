@@ -127,7 +127,12 @@ async def issues_create(payload: IssueCreate, user: TokenPayload = Depends(get_c
 
 
 @router.patch("/bcf/issues/{issue_id}", summary="Update issue status/fields")
-async def issues_update(issue_id: str, body: Dict[str, Any], user: TokenPayload = Depends(get_current_user)):
+async def issues_update(issue_id: str, body: Dict[str, Any], user: TokenPayload = Depends(get_current_user),
+                       db: Session = Depends(get_session)):
+    existing = collection("bcf_issues").get(issue_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Issue not found.")
+    verify_project_owner(int(existing.get("project_id") or 0), user, db)
     updated = bim_service.update_issue(issue_id, **body)
     if not updated:
         raise HTTPException(status_code=404, detail="Issue not found.")
@@ -167,7 +172,12 @@ async def comments_create(payload: CommentCreate, user: TokenPayload = Depends(g
 
 
 @router.patch("/comments/{comment_id}/resolve", summary="Mark comment resolved")
-async def comments_resolve(comment_id: str, user: TokenPayload = Depends(get_current_user)):
+async def comments_resolve(comment_id: str, user: TokenPayload = Depends(get_current_user),
+                           db: Session = Depends(get_session)):
+    existing = collection("comments").get(comment_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    verify_project_owner(int(existing.get("project_id") or 0), user, db)
     doc = collection("comments").update(comment_id, resolved=True)
     if not doc:
         raise HTTPException(status_code=404, detail="Comment not found.")
@@ -214,10 +224,12 @@ async def approvals_create(payload: ApprovalCreate, user: TokenPayload = Depends
 
 
 @router.post("/approvals/{approval_id}/transition", summary="Move approval to next state")
-async def approvals_transition(approval_id: str, payload: ApprovalTransition, user: TokenPayload = Depends(get_current_user)):
+async def approvals_transition(approval_id: str, payload: ApprovalTransition, user: TokenPayload = Depends(get_current_user),
+                               db: Session = Depends(get_session)):
     doc = collection("approvals").get(approval_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Approval not found.")
+    verify_project_owner(int(doc.get("project_id") or 0), user, db)
     current = doc.get("state", "draft")
     allowed = ALLOWED_TRANSITIONS.get(current, [])
     if payload.state not in allowed:
@@ -283,10 +295,15 @@ async def tasks_create(payload: TaskCreate, user: TokenPayload = Depends(get_cur
 
 
 @router.patch("/tasks/{task_id}/move", summary="Drag-and-drop move between states")
-async def tasks_move(task_id: str, payload: TaskMove, user: TokenPayload = Depends(get_current_user)):
+async def tasks_move(task_id: str, payload: TaskMove, user: TokenPayload = Depends(get_current_user),
+                     db: Session = Depends(get_session)):
     if payload.state not in TASK_STATES:
         raise HTTPException(status_code=422,
                             detail=f"state must be one of {TASK_STATES}")
+    existing = collection("tasks").get(task_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    verify_project_owner(int(existing.get("project_id") or 0), user, db)
     doc = collection("tasks").update(task_id, state=payload.state,
                                      order=payload.order)
     if not doc:
@@ -295,7 +312,12 @@ async def tasks_move(task_id: str, payload: TaskMove, user: TokenPayload = Depen
 
 
 @router.delete("/tasks/{task_id}", summary="Delete a task")
-async def tasks_delete(task_id: str, user: TokenPayload = Depends(get_current_user)):
+async def tasks_delete(task_id: str, user: TokenPayload = Depends(get_current_user),
+                       db: Session = Depends(get_session)):
+    existing = collection("tasks").get(task_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    verify_project_owner(int(existing.get("project_id") or 0), user, db)
     if not collection("tasks").delete(task_id):
         raise HTTPException(status_code=404, detail="Task not found.")
     return {"deleted": task_id}
@@ -318,7 +340,13 @@ async def notifications_list(project_id: Optional[int] = None, unread_only: bool
 
 @router.post("/notifications/{notification_id}/read",
              summary="Mark a notification as read")
-async def notifications_read(notification_id: str, user: TokenPayload = Depends(get_current_user)):
+async def notifications_read(notification_id: str, user: TokenPayload = Depends(get_current_user),
+                             db: Session = Depends(get_session)):
+    existing = collection("notifications").get(notification_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    if existing.get("project_id") is not None:
+        verify_project_owner(int(existing.get("project_id") or 0), user, db)
     doc = collection("notifications").update(notification_id, read=True)
     if not doc:
         raise HTTPException(status_code=404, detail="Notification not found.")

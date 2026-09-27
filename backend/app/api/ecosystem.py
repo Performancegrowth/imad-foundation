@@ -281,7 +281,9 @@ class ReviewRequestIn(BaseModel):
 @router.post("/consultants/request-review",
              summary="Request a licensed review/stamp from a consultant",
              status_code=202)
-async def request_review(payload: ReviewRequestIn) -> Dict[str, Any]:
+async def request_review(payload: ReviewRequestIn, user: TokenPayload = Depends(get_current_user),
+                       db: Session = Depends(get_session)) -> Dict[str, Any]:
+    verify_project_owner(payload.project_id, user, db)
     consultant = collection("consultants").get(payload.consultant_id)
     if not consultant:
         raise HTTPException(status_code=404, detail="Consultant not found.")

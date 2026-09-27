@@ -13,10 +13,13 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, verify_project_owner
+from app.core.database import get_session
 from app.core.storage import result_id, save_result, list_results
 from app.models.plan_data import PlanData
 from app.services.noncad_processor import PlanGenerationError, PlanGenerator
+from app.core.security import TokenPayload
+from sqlalchemy.orm import Session
 
 log = logging.getLogger("imad.api.visualization")
 # AuthZ: 3D scenes expose the caller's designed structure — require a token.
@@ -107,8 +110,10 @@ def _member_detail(element_id: str, kind: str, level: int,
 
 
 @router.post("/building/scene", summary="Generate 3D building scene from plan + analysis")
-async def building_scene(payload: BuildingSceneRequest) -> Dict[str, Any]:
+async def building_scene(payload: BuildingSceneRequest, user: TokenPayload = Depends(get_current_user),
+                         db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Build a Three.js scene JSON from structural geometry + analysis."""
+    verify_project_owner(payload.project_id, user, db)
     plan = None
     if payload.plan:
         try:
@@ -133,12 +138,15 @@ async def building_scene(payload: BuildingSceneRequest) -> Dict[str, Any]:
 
 @router.post("/building/inspect", summary="Inspector record for one member")
 async def inspect_member(payload: BuildingSceneRequest,
-                         element_id: str = "") -> Dict[str, Any]:
+                         element_id: str = "",
+                         user: TokenPayload = Depends(get_current_user),
+                         db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Merged forces + design for a single member (3D click inspector).
 
     ``element_id`` arrives as a query parameter (``?element_id=B7``); the plan
     is resolved exactly like the scene endpoint so ids always line up.
     """
+    verify_project_owner(payload.project_id, user, db)
     plan = None
     if payload.plan:
         try:
@@ -180,8 +188,10 @@ async def inspect_member(payload: BuildingSceneRequest,
 
 
 @router.post("/building/gltf", summary="Export 3D scene as glTF file")
-async def building_gltf(payload: GltfExportRequest) -> Dict[str, Any]:
+async def building_gltf(payload: GltfExportRequest, user: TokenPayload = Depends(get_current_user),
+                        db: Session = Depends(get_session)) -> Dict[str, Any]:
     """Export the 3D scene to a glTF 2.0 file for download."""
+    verify_project_owner(payload.project_id, user, db)
     from app.core.storage import storage_root
     from pathlib import Path
     import json
